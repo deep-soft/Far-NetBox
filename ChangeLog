@@ -5,6 +5,13 @@
 ## [Unreleased] - ReleaseDate
 
 
+## [24.2.2.594] - 2024-02-24
+
+### Fixes
+
+ - gh-411 Fix list sorting
+
+
 ## [24.2.2.593] - 2024-02-24
 
 ### Changes
@@ -13,7 +20,7 @@
 
 ### Fixes
 
-- correction of: gh-409 Debug log loses messages
+ - Correction of: gh-409 Debug log loses messages
 
 
 ## [24.2.2.591] - 2024-02-23
