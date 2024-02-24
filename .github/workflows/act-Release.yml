@@ -73,6 +73,8 @@ jobs:
         shell: bash
         run: |
           rm ./*.7z || true;
+          rm ./*.zip || true;
+          rm -r ./build || true;
 
       - name: Create Build folder
         run: |
