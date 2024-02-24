@@ -917,7 +917,9 @@ public:
     }
     __finally__removed
     {
-      // delete DumpLines;
+#if defined(__BORLANDC__)
+      delete DumpLines;
+#endif // defined(__BORLANDC__)
     } end_try__finally
 
     SetCapacity(20 * 1024);
@@ -1335,8 +1337,10 @@ public:
     }
     __finally__removed
     {
-      // delete Request;
-      // delete Response;
+#if defined(__BORLANDC__)
+      delete Request;
+      delete Response;
+#endif // defined(__BORLANDC__)
     } end_try__finally
 
     return Result;
@@ -1398,8 +1402,10 @@ protected:
     }
     __catch__removed
     {
-      // delete Request;
-      // throw;
+#if defined(__BORLANDC__)
+      delete Request;
+      throw;
+#endif // defined(__BORLANDC__)
     } end_try__catch
 
     if (Request != nullptr)
@@ -2044,16 +2050,14 @@ void TSFTPFileSystem::Init(void * Data /* TSecureShell*/)
 
 TSFTPFileSystem::~TSFTPFileSystem() noexcept
 {
-  // delete FSupport;
-  // After closing, we can only possibly have "discard" reservations of the not-read responses to the last requests
-  // (typically to SSH_FXP_CLOSE)
-  for (int32_t I = 0; I < FPacketReservations->Count; I++)
-  {
-    DebugAssert(FPacketReservations->GetItem(I) == nullptr);
-  }
-  // delete FPacketReservations;
-  // delete FFixedPaths;
-  // delete FSecureShell;
+#if defined(__BORLANDC__)
+  delete FSupport;
+#endif // defined(__BORLANDC__)
+#if defined(__BORLANDC__)
+  delete FPacketReservations;
+  delete FFixedPaths;
+  delete FSecureShell;
+#endif // defined(__BORLANDC__)
   SAFE_DESTROY(FSecureShell);
 }
 
@@ -2067,6 +2071,12 @@ void TSFTPFileSystem::Open()
 void TSFTPFileSystem::Close()
 {
   FSecureShell->Close();
+  // After closing, we can only possibly have "discard" reservations of the not-read responses to the last requests
+  // (typically to SSH_FXP_CLOSE)
+  for (int32_t I = 0; I < FPacketReservations->Count; I++)
+  {
+    DebugAssert(FPacketReservations->GetItem(I) == nullptr);
+  }
 }
 
 bool TSFTPFileSystem::GetActive() const
@@ -3126,8 +3136,10 @@ TRemoteFile * TSFTPFileSystem::LoadFile(TSFTPPacket * Packet,
   }
   __catch__removed
   {
-    // delete File;
-    // throw;
+#if defined(__BORLANDC__)
+    delete File;
+    throw;
+#endif // defined(__BORLANDC__)
   } end_try__catch
   return File.release();
 }
@@ -4242,7 +4254,9 @@ void TSFTPFileSystem::ChangeFileProperties(const UnicodeString & AFileName,
   }
   __finally__removed
   {
-    // delete File;
+#if defined(__BORLANDC__)
+    delete File;
+#endif // defined(__BORLANDC__)
   } end_try__finally
 }
 
@@ -4800,9 +4814,11 @@ void TSFTPFileSystem::Source(
             FORMAT("Existing file is owned by another user [%s], not doing resumable transfer.", File->GetFileOwner().GetName()));
         }
 
+#if defined(__BORLANDC__)
+        delete File;
+        File = nullptr;
+#endif // defined(__BORLANDC__)
         FilePtr.reset();
-        // delete File;
-        // File = nullptr;
       }
 
       if (ResumeAllowed)
@@ -4811,9 +4827,11 @@ void TSFTPFileSystem::Source(
         if (RemoteFileExists(DestPartialFullName, &File))
         {
           ResumeOffset = FilePtr->Resolve()->GetSize(); // Though partial file should not be symlink
+#if defined(__BORLANDC__)
+          delete File;
+          File = nullptr;
+#endif // defined(__BORLANDC__)
           FilePtr.reset();
-          // delete File;
-          // File = nullptr;
 
           bool PartialBiggerThanSource = (ResumeOffset > OperationProgress->GetLocalSize());
           if (FLAGCLEAR(Params, cpNoConfirmation) &&

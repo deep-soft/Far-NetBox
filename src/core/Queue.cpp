@@ -244,7 +244,7 @@ public:
 };
 
 constexpr TObjectClassId OBJECT_CLASS_TTerminalItem = static_cast<TObjectClassId>(nb::counter_id());
-class TTerminalItem : public TSignalThread
+class TTerminalItem final : public TSignalThread
 {
   friend class TQueueItem;
   friend class TBackgroundTerminal;
@@ -310,9 +310,9 @@ int32_t TSimpleThread::ThreadProc(void * Thread)
     // we do not expect thread to be terminated with exception
     DebugFail();
   }
-  SimpleThread->FFinished = true;
-  if (SimpleThread->Finished())
+  if (!SimpleThread->Finished())
   {
+    SimpleThread->Close();
     delete SimpleThread;
   }
   return 0;
@@ -354,13 +354,14 @@ void TSimpleThread::Start()
 
 bool TSimpleThread::Finished()
 {
-  return false;
+  return FFinished;
 }
 
 void TSimpleThread::Close()
 {
   if (!FFinished)
   {
+    FFinished = true;
     Terminate();
     WaitFor();
   }
@@ -519,8 +520,7 @@ TTerminalQueue::~TTerminalQueue() noexcept
     {
       TTerminalItem * TerminalItem = FTerminals->GetAs<TTerminalItem>(0);
       FTerminals->Delete(0);
-      TerminalItem->Terminate();
-      TerminalItem->WaitFor();
+      TerminalItem->Close();
       SAFE_DESTROY(TerminalItem);
     }
 #if defined(__BORLANDC__)
