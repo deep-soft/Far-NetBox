@@ -19,6 +19,9 @@
 #include <Property.hpp>
 #include <ObjIDs.h>
 
+#undef GetObject
+#undef GetUserName
+
 #pragma warning(pop)
 
 namespace nb {
@@ -350,13 +353,14 @@ public:
   template<class T>
   const T * As(int32_t Index) const { return cast_to<T>(Objects[Index]); }
   virtual const TObject * operator [](int32_t Index) const override;
-  const TObject * GetObj(int32_t Index) const;
   TObject * Get(int32_t Index) { return const_cast<TObject *>(Objects[Index]); }
   bool GetOwnsObjects() const { return FOwnsObjects; }
   void SetOwnsObjects(bool Value) { FOwnsObjects = Value; }
   virtual void Notify(TObject * Ptr, TListNotification Action) override;
 
 private:
+  const TObject * GetObj(int32_t Index) const;
+
   bool FOwnsObjects{true};
 };
 
@@ -408,7 +412,7 @@ public:
   virtual void Assign(const TPersistent * Source) override;
 
 public:
-  virtual void SetObj(int32_t Index, TObject * AObject) = 0;
+  virtual void SetObject(int32_t Index, TObject * AObject) = 0;
   virtual bool GetSorted() const = 0;
   virtual void SetSorted(bool Value) = 0;
   virtual bool GetCaseSensitive() const = 0;
@@ -432,7 +436,7 @@ public:
   const ROProperty<UnicodeString> Text{nb::bind(&TStrings::GetText, this)};
 
 public:
-  // TODO: ROIndexedProperty<TObject *> Objects{nb::bind(&TStrings::GetObj, this)};
+  // TODO: ROIndexedProperty<TObject *> Objects{nb::bind(&TStrings::GetObject, this)};
   // TODO: ROIndexedProperty<UnicodeString> Names{nb::bind(&TStrings::GetName, this)};
   const ROIndexedProperty<UnicodeString> Strings{nb::bind(&TStrings::GetStrings, this)};
 
@@ -523,7 +527,7 @@ public:
   virtual int32_t GetCount() const override;
 
 public:
-  virtual void SetObj(int32_t Index, TObject * AObject) override;
+  virtual void SetObject(int32_t Index, TObject * AObject) override;
   virtual bool GetSorted() const override { return FSorted; }
   virtual void SetSorted(bool Value) override;
   virtual bool GetCaseSensitive() const override { return FCaseSensitive; }
