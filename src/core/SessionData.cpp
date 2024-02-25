@@ -194,7 +194,7 @@ void TSessionData::DefaultSettings()
 {
   SetHostName("");
   SetPortNumber(SshPortNumber);
-  SessionSetUserName("");
+  SetUserName("");
   SetPassword("");
   SetNewPassword("");
   SetChangePassword(false);
@@ -626,7 +626,7 @@ void TSessionData::DoCopyData(const TSessionData * SourceData, bool NoRecrypt)
   FModified = SourceData->FModified;
   FSaveOnly = SourceData->FSaveOnly;
 
-  SessionSetUserName(SourceData->SessionGetUserName());
+  SetUserName(SourceData->SessionGetUserName());
   for (int32_t Index = 0; Index < nb::ToIntPtr(_countof(FBugs)); ++Index)
   {
     // PROPERTY(Bug[(TSshBug)Index]);
@@ -799,7 +799,7 @@ void TSessionData::DoLoad(THierarchicalStorage * Storage, bool PuttyImport, bool
   // (implemented by TOptionsIniFile)
 
   SetPortNumber(Storage->ReadInteger("PortNumber", nb::ToInt32(GetPortNumber())));
-  SessionSetUserName(Storage->ReadString("UserName", SessionGetUserName()));
+  SetUserName(Storage->ReadString("UserName", SessionGetUserName()));
   // must be loaded after UserName, because HostName may be in format user@host
   SetHostName(Storage->ReadString("HostName", GetHostName()));
 
@@ -2882,7 +2882,7 @@ TSessionData * TSessionData::CreateTunnelData(int32_t TunnelLocalPortNumber)
 void TSessionData::ExpandEnvironmentVariables()
 {
   SetHostName(GetHostNameExpanded());
-  SessionSetUserName(GetUserNameExpanded());
+  SetUserName(GetUserNameExpanded());
   SetPublicKeyFile(::ExpandEnvironmentVariables(GetPublicKeyFile()));
   DetachedCertificate = ::ExpandEnvironmentVariables(DetachedCertificate);
 }
@@ -3007,7 +3007,7 @@ void TSessionData::SetHostName(const UnicodeString & AValue)
     const int32_t P = Value.LastDelimiter(L"@");
     if (P > 0)
     {
-      SessionSetUserName(Value.SubString(1, P - 1));
+      SetUserName(Value.SubString(1, P - 1));
       Value = Value.SubString(P + 1, Value.Length() - P);
     }
     FHostName = Value;
@@ -3072,7 +3072,7 @@ void TSessionData::SetUnsetNationalVars(bool value)
   SET_SESSION_PROPERTY(UnsetNationalVars);
 }
 
-void TSessionData::SessionSetUserName(const UnicodeString & value)
+void TSessionData::SetUserName(const UnicodeString & value)
 {
   // Avoid password recryption (what may popup master password prompt)
   if (FUserName != value)
@@ -5173,7 +5173,7 @@ UnicodeString TSessionData::GetFolderName() const
 UnicodeString TSessionData::ComposePath(
   const UnicodeString & APath, const UnicodeString & Name)
 {
-  return TPath::Join(APath, Name);
+  return TUnixPath::Join(APath, Name);
 }
 
 void TSessionData::DisableAuthenticationsExceptPassword()
@@ -5218,7 +5218,7 @@ void TSessionData::SetLoginType(TLoginType value)
   if (GetLoginType() == ltAnonymous)
   {
     SetPassword(L"");
-    SessionSetUserName(AnonymousUserName);
+    SetUserName(AnonymousUserName);
   }
 }
 
@@ -5412,7 +5412,7 @@ void TStoredSessionList::Load(THierarchicalStorage * Storage,
     {
       for (int32_t Index = 0; Index < TObjectList::GetCount(); ++Index)
       {
-        if (Loaded->IndexOf(GetObj(Index)) < 0)
+        if (Loaded->IndexOf(Objects[Index]) < 0)
         {
           Delete(Index);
           Index--;
@@ -6275,7 +6275,7 @@ TStrings * TStoredSessionList::GetFolderOrWorkspaceList(
   std::unique_ptr<TStringList> Result(std::make_unique<TStringList>());
   for (int32_t Index = 0; (Index < DataList->Count); Index++)
   {
-    Result->Add(rtti::dyn_cast_or_null<TSessionData>(DataList->GetObj(Index))->GetSessionName());
+    Result->Add(rtti::dyn_cast_or_null<TSessionData>(DataList->Objects[Index])->GetSessionName());
   }
 
   return Result.release();

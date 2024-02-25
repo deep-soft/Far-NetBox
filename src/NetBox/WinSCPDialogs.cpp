@@ -1391,7 +1391,7 @@ void TPasswordDialog::GeneratePrompt(bool ShowSavePassword,
   {
     GenerateLabel(Prompts->GetString(Index), Truncated);
 
-    FEdits->Add(GenerateEdit(FLAGSET(nb::ToUIntPtr(Prompts->GetObj(Index)), pupEcho)));
+    FEdits->Add(GenerateEdit(FLAGSET(nb::ToUIntPtr(Prompts->Objects[Index]), pupEcho)));
   }
 }
 
@@ -3549,13 +3549,13 @@ bool TSessionDialog::Execute(TSessionData * SessionData, TSessionActionEnum & Ac
 
     SessionData->SetHostName(HostName);
     SessionData->SetPortNumber(PortNumberEdit->GetAsInteger());
-    SessionData->SessionSetUserName(UserName);
+    SessionData->SetUserName(UserName);
     SessionData->SetPassword(Password);
     SessionData->SetLoginType(ltNormal);
     SessionData->SetPublicKeyFile(PrivateKeyEdit->GetText());
     if (GetFSProtocol() == fsS3)
     {
-      SessionData->SessionSetUserName(UserName);
+      SessionData->SetUserName(UserName);
       SessionData->SetPassword(Password);
       SessionData->SetFtps(ftpsImplicit); // TODO: get code from TLoginDialog::PortNumberEditChange
     }
@@ -3812,7 +3812,7 @@ bool TSessionDialog::Execute(TSessionData * SessionData, TSessionActionEnum & Ac
 
     for (int32_t Index6 = 0; Index6 < KEX_COUNT; ++Index6)
     {
-      SessionData->SetKex(Index6, static_cast<TKex>(nb::ToUIntPtr(KexListBox->GetItems()->GetObj(Index6))));
+      SessionData->SetKex(Index6, static_cast<TKex>(nb::ToUIntPtr(KexListBox->GetItems()->Objects[Index6])));
     }
 
     // Authentication tab
@@ -8400,7 +8400,7 @@ bool TWinSCPFileSystem::RemoteTransferDialog(TStrings * AFileList,
     GetMsg(Move ? NB_REMOTE_MOVE_FILE : NB_REMOTE_COPY_FILE),
     GetMsg(Move ? NB_REMOTE_MOVE_FILES : NB_REMOTE_COPY_FILES), AFileList, true);
 
-  UnicodeString Value = TPath::Join(Target, FileMask);
+  UnicodeString Value = TUnixPath::Join(Target, FileMask);
   const bool Result = FPlugin->InputBox(
     GetMsg(Move ? NB_REMOTE_MOVE_TITLE : NB_REMOTE_COPY_TITLE), Prompt,
     Value, 0, MOVE_TO_HISTORY) && !Value.IsEmpty();
@@ -8738,8 +8738,8 @@ void TQueueDialog::RefreshQueue()
 
     int32_t ILine = 0;
     while ((Index > ILine) &&
-      (GetQueueItems()->GetObj(Index) ==
-        GetQueueItems()->GetObj(Index - ILine - 1)))
+      (GetQueueItems()->Objects[Index] ==
+        GetQueueItems()->Objects[Index - ILine - 1]))
     {
       ILine++;
     }
