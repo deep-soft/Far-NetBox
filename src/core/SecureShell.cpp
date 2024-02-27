@@ -2092,9 +2092,9 @@ bool TSecureShell::EventSelectLoop(uint32_t MSec, bool ReadEventRequired,
   {
     if (GetConfiguration()->GetActualLogProtocol() >= 2)
     {
-#if 0
+#if defined(__BORLANDC__)
       LogEvent("Looking for network events"); // TODO: if LogLevel > 4 LogEvent
-#endif // #if 0
+#endif // defined(__BORLANDC__)
     }
     const uint32_t TicksBefore = ::GetTickCount();
     HandleWaitList * WaitList = nullptr;
@@ -2120,7 +2120,8 @@ bool TSecureShell::EventSelectLoop(uint32_t MSec, bool ReadEventRequired,
         // It returns only busy handles, so the set can change with every call to run_toplevel_callbacks.
         WaitList = get_handle_wait_list(FCallbackSet.get());
         DebugAssert(WaitList->nhandles < MAXIMUM_WAIT_OBJECTS);
-        WaitList->handles[WaitList->nhandles] = FSocketEvent;
+        if (WaitList->nhandles < MAXIMUM_WAIT_OBJECTS)
+          WaitList->handles[WaitList->nhandles] = FSocketEvent;
         WaitResult = ::WaitForMultipleObjects(WaitList->nhandles + 1, WaitList->handles, FALSE, TimeoutStep);
         FUI->ProcessGUI();
         // run_toplevel_callbacks can cause processing of pending raw data, so:
@@ -2177,9 +2178,9 @@ bool TSecureShell::EventSelectLoop(uint32_t MSec, bool ReadEventRequired,
       {
         if (GetConfiguration()->GetActualLogProtocol() >= 2)
         {
-#if 0
+#if defined(__BORLANDC__)
           LogEvent("Timeout waiting for network events"); // TODO: if LogLevel > 4 LogEvent
-#endif // #if 0
+#endif // defined(__BORLANDC__)
         }
 
         MSec = 0;

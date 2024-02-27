@@ -174,7 +174,7 @@ public:
   bool Record()
   {
     bool Result = (FState != Opened);
-#if 0
+#if defined(__BORLANDC__)
     if (Result)
     {
       if (FLog->FLogging && (FState != Cancelled))
@@ -234,7 +234,7 @@ public:
       }
       delete this;
     }
-#endif
+#endif // defined(__BORLANDC__)
     return Result;
   }
 
@@ -504,12 +504,12 @@ TSessionAction::TSessionAction(TActionLog * Log, TLogAction Action) noexcept
 
 TSessionAction::~TSessionAction() noexcept
 {
-  if (FRecord != nullptr)
+  try { if (FRecord != nullptr)
   {
     TSessionActionRecord * Record = FRecord;
     FRecord = nullptr;
     Record->Commit();
-  }
+  } } catch(const std::exception &) { DEBUG_PRINTF("Error"); }
 }
 
 void TSessionAction::Restart()
@@ -844,7 +844,7 @@ TSessionLog::TSessionLog(gsl::not_null<TSessionUI *> UI, const TDateTime & Start
 }
 
 TSessionLog::~TSessionLog() noexcept
-{
+{ try {
   // DEBUG_PRINTF("end");
   FClosed = true;
   if (FLogger)
@@ -855,6 +855,7 @@ TSessionLog::~TSessionLog() noexcept
   delete FCriticalSection;
 #endif // defined(__BORLANDC__)
   // DEBUG_PRINTF("end");
+  } catch(const std::exception &) { DEBUG_PRINTF("Error"); }
 }
 
 void TSessionLog::SetParent(gsl::not_null<TSessionLog *> AParent, const UnicodeString & AName)
@@ -1612,13 +1613,18 @@ void TActionLog::Init(TSessionUI * UI, const TDateTime & Started, TSessionData *
 }
 
 TActionLog::~TActionLog() noexcept
-{
+{ try {
   DebugAssert(FPendingActions->GetCount() == 0);
-  // delete FPendingActions;
+#if defined(__BORLANDC__)
+  delete FPendingActions;
+#endif // defined(__BORLANDC__)
   FClosed = true;
   ReflectSettings();
   DebugAssert(FLogger == nullptr);
-  // delete FCriticalSection;
+#if defined(__BORLANDC__)
+  delete FCriticalSection;
+#endif // defined(__BORLANDC__)
+  } catch(const std::exception &) { DEBUG_PRINTF("Error"); }
 }
 
 void TActionLog::Add(const UnicodeString & Line)
@@ -1735,13 +1741,13 @@ void TActionLog::ReflectSettings()
   if (ALogging && !FLogging)
   {
     FLogging = true;
-#if 0
+#if defined(__BORLANDC__)
     Add(L"<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     UnicodeString SessionName =
       (FSessionData != nullptr) ? XmlAttributeEscape(FSessionData->SessionName) : UnicodeString(L"nosession");
     Add(FORMAT(L"<session xmlns=\"http://winscp.net/schema/session/1.0\" name=\"%s\" start=\"%s\">",
         (SessionName, StandardTimestamp())));
-#endif // #if 0
+#endif // defined(__BORLANDC__)
   }
   else if (!ALogging && FLogging)
   {
@@ -1752,9 +1758,9 @@ void TActionLog::ReflectSettings()
     // do not try to close the file, if it has not been opened, to avoid recursion
     if (FLogger != nullptr)
     {
-#if 0
+#if defined(__BORLANDC__)
       Add(L"</session>");
-#endif // #if 0
+#endif // defined(__BORLANDC__)
     }
     CloseLogFile();
     FLogging = false;
@@ -1878,12 +1884,12 @@ TApplicationLog::TApplicationLog()
 
 TApplicationLog::~TApplicationLog()
 {
-  if (FFile != nullptr)
+  try { if (FFile != nullptr)
   {
     Log(L"Closing log");
     fclose(static_cast<FILE *>(FFile));
     FFile = nullptr;
-  }
+  } } catch(const std::exception &) { DEBUG_PRINTF("Error"); }
   FLogging = false;
 }
 

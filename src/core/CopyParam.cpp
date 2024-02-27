@@ -9,8 +9,10 @@
 #include "TextsCore.h"
 #include "Interface.h"
 
-// const wchar_t * TransferModeNames[] = { L"binary", L"ascii", L"automatic" };
-// const int TransferModeNamesCount = LENOF(TransferModeNames);
+#if defined(__BORLANDC__)
+const wchar_t * TransferModeNames[] = { L"binary", L"ascii", L"automatic" };
+const int TransferModeNamesCount = LENOF(TransferModeNames);
+#endif // defined(__BORLANDC__)
 
 TCopyParamType::TCopyParamType(TObjectClassId Kind) noexcept : TObject(Kind)
 {
@@ -102,7 +104,7 @@ UnicodeString TCopyParamType::GenerateTransferCommandArgs(int32_t Attrs, const U
   return ScriptArgs;
 }
 
-#if 0
+#if defined(__BORLANDC__)
 
 UnicodeString TCopyParamType::GenerateAssemblyCode(TAssemblyLanguage Language, int32_t Attrs) const
 {
@@ -114,7 +116,7 @@ UnicodeString TCopyParamType::GenerateAssemblyCode(TAssemblyLanguage Language, i
   return Result;
 }
 
-#endif // #if 0
+#endif // defined(__BORLANDC__)
 
 void TCopyParamType::DoGetInfoStr(
   const UnicodeString & Separator, uint32_t Attrs,
@@ -166,7 +168,7 @@ void TCopyParamType::DoGetInfoStr(
     {
       ADD("", cpaIncludeMaskOnly | cpaNoTransferMode);
 
-#if 0
+#if defined(__BORLANDC__)
       ScriptArgs += RtfSwitchValue(TRANSFER_SWITCH, Link, TransferModeNames[TransferMode]);
       const wchar_t * TransferModeMembers[] = { L"Binary", L"Ascii", L"Automatic" };
       AssemblyCode += AssemblyProperty(
@@ -176,7 +178,7 @@ void TCopyParamType::DoGetInfoStr(
         ScriptNonDefaults.AsciiFileMask = AsciiFileMask;
         CodeNonDefaults.AsciiFileMask = AsciiFileMask;
       }
-#endif // #if 0
+#endif // defined(__BORLANDC__)
     }
   }
   else
@@ -230,7 +232,7 @@ void TCopyParamType::DoGetInfoStr(
 
       if (FLAGCLEAR(Attrs, Except))
       {
-#if 0
+#if defined(__BORLANDC__)
         ScriptArgs += RtfSwitchValue(PERMISSIONS_SWITCH, Link, Rights.Octal);
 
         const UnicodeString FilePermissionsClassName = L"FilePermissions";
@@ -241,7 +243,7 @@ void TCopyParamType::DoGetInfoStr(
           AssemblyNewClassInstanceEnd(Language, Inline);
 
         AssemblyCode += AssemblyPropertyRaw(Language, TransferOptionsClassName, L"FilePermissions", FilePermissions, false);
-#endif // #if 0
+#endif // defined(__BORLANDC__)
       }
     }
 
@@ -303,10 +305,10 @@ void TCopyParamType::DoGetInfoStr(
       }
       else
       {
-#if 0
+#if defined(__BORLANDC__)
         ScriptArgs += RtfSwitch(NOPRESERVETIME_SWITCH, Link);
         AssemblyCode += AssemblyProperty(Language, TransferOptionsClassName, L"PreserveTimestamp", false, false);
-#endif // #if 0
+#endif // defined(__BORLANDC__)
       }
     }
   }
@@ -388,10 +390,10 @@ void TCopyParamType::DoGetInfoStr(
   {
     if (ADD(FORMAT(LoadStr(COPY_INFO_FILE_MASK), IncludeFileMask.Masks), cpaNoIncludeMask))
     {
-#if 0
+#if defined(__BORLANDC__)
       ScriptArgs += RtfSwitch(FILEMASK_SWITCH, Link, IncludeFileMask.Masks);
       AssemblyCode += AssemblyProperty(Language, TransferOptionsClassName, L"FileMask", IncludeFileMask.Masks, false);
-#endif // #if 0
+#endif // defined(__BORLANDC__)
     }
   }
 
@@ -403,10 +405,10 @@ void TCopyParamType::DoGetInfoStr(
     const int32_t LimitKB = nb::ToInt32(GetCPSLimit() / 1024);
     if (ADD(FMTLOAD(COPY_INFO_CPS_LIMIT2, LimitKB), cpaIncludeMaskOnly))
     {
-#if 0
+#if defined(__BORLANDC__)
       ScriptArgs += RtfSwitch(SPEED_SWITCH, Link, LimitKB);
       AssemblyCode += AssemblyProperty(Language, TransferOptionsClassName, L"SpeedLimit", LimitKB, false);
-#endif // #if 0
+#endif // defined(__BORLANDC__)
     }
   }
 
@@ -483,12 +485,12 @@ void TCopyParamType::DoGetInfoStr(
     }
 //    ScriptArgs += RtfSwitchValue(RESUMESUPPORT_SWITCH, Link, Value);
 
-#if 0
+#if defined(__BORLANDC__)
     const UnicodeString ResumeSupportClassName = "TransferResumeSupport";
     const bool Inline = true;
     UnicodeString ResumeSupportCode =
       AssemblyNewClassInstanceStart(Language, ResumeSupportClassName, Inline);
-#endif // #if 0
+#endif // defined(__BORLANDC__)
     if (GetResumeSupport() == rsSmart)
     {
 //      ResumeSupportCode += AssemblyProperty(Language, ResumeSupportClassName, "Threshold", ResumeThresholdKB, Inline);
@@ -497,14 +499,14 @@ void TCopyParamType::DoGetInfoStr(
     {
 //      ResumeSupportCode += AssemblyProperty(Language, ResumeSupportClassName, "State", "TransferResumeSupportState", CodeState, Inline);
     }
-#if 0
+#if defined(__BORLANDC__)
     ResumeSupportCode += AssemblyNewClassInstanceEnd(Language, Inline);
 
     AssemblyCode += AssemblyPropertyRaw(Language, TransferOptionsClassName, "ResumeSupport", ResumeSupportCode, false);
-#endif // #if 0
+#endif // defined(__BORLANDC__)
   }
 
-#if 0
+#if defined(__BORLANDC__)
   std::unique_ptr<TStringList> RawOptions;
   // std::unique_ptr<TOptionsStorage> OptionsStorage;
 
@@ -562,7 +564,7 @@ void TCopyParamType::DoGetInfoStr(
   {
     Result = LoadStr(COPY_INFO_DEFAULT);
   }
-#endif // if 0
+#endif // defined(__BORLANDC__)
 #undef ADD
 }
 
