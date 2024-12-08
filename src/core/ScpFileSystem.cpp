@@ -32,6 +32,7 @@ constexpr int32_t ecIgnoreWarnings = 0x02;
 constexpr int32_t ecReadProgress = 0x04;
 constexpr int32_t ecIgnoreStdErr = 0x08;
 constexpr int32_t ecNoEnsureLocation = 0x10;
+constexpr int32_t ecOnlyReturnCode = 0x20;
 constexpr int32_t ecDefault = ecRaiseExcept;
 //---------------------------------------------------------------------------
 DERIVE_EXT_EXCEPTION(EScpFileSkipped, ESkipFile);
@@ -173,31 +174,41 @@ void TCommandSet::Default()
 int32_t TCommandSet::GetMaxLines(TFSCommand Cmd) const
 {
   CHECK_CMD;
-  return CommandSet[Cmd].MaxLines;
+  if ((Cmd >=0) && (Cmd <= MaxShellCommand))
+    return CommandSet[Cmd].MaxLines;
+  return 0;
 }
 
 int32_t TCommandSet::GetMinLines(TFSCommand Cmd) const
 {
   CHECK_CMD;
-  return CommandSet[Cmd].MinLines;
+  if ((Cmd >=0) && (Cmd <= MaxShellCommand))
+    return CommandSet[Cmd].MinLines;
+  return 0;
 }
 
 bool TCommandSet::GetModifiesFiles(TFSCommand Cmd) const
 {
   CHECK_CMD;
-  return CommandSet[Cmd].ModifiesFiles;
+  if ((Cmd >=0) && (Cmd <= MaxShellCommand))
+    return CommandSet[Cmd].ModifiesFiles;
+  return false;
 }
 
 bool TCommandSet::GetChangesDirectory(TFSCommand Cmd) const
 {
   CHECK_CMD;
-  return CommandSet[Cmd].ChangesDirectory;
+  if ((Cmd >=0) && (Cmd <= MaxShellCommand))
+    return CommandSet[Cmd].ChangesDirectory;
+  return false;
 }
 
 bool TCommandSet::GetInteractiveCommand(TFSCommand Cmd) const
 {
   CHECK_CMD;
-  return CommandSet[Cmd].InteractiveCommand;
+  if ((Cmd >=0) && (Cmd <= MaxShellCommand))
+    return CommandSet[Cmd].InteractiveCommand;
+  return false;
 }
 
 bool TCommandSet::GetOneLineCommand(TFSCommand /*Cmd*/) const
@@ -218,7 +229,9 @@ void TCommandSet::SetCommands(TFSCommand Cmd, const UnicodeString & Value)
 UnicodeString TCommandSet::GetCommands(TFSCommand Cmd) const
 {
   CHECK_CMD;
-  return CommandSet[Cmd].Command;
+  if ((Cmd >=0) && (Cmd <= MaxShellCommand))
+    return CommandSet[Cmd].Command;
+  return EmptyStr;
 }
 
 UnicodeString TCommandSet::Command(TFSCommand Cmd, fmt::ArgList args)
@@ -731,6 +744,7 @@ void TSCPFileSystem::ExecCommand(TFSCommand Cmd, int32_t Params,
   const int32_t COParams =
     coWaitForLastLine |
     FLAGMASK(FLAGSET(Params, ecRaiseExcept), coRaiseExcept) |
+    FLAGMASK(FLAGSET(Params, ecOnlyReturnCode), coOnlyReturnCode) |
     FLAGMASK(FLAGSET(Params, ecIgnoreWarnings), coIgnoreWarnings) |
     FLAGMASK(FLAGSET(Params, ecReadProgress), coReadProgress) |
     FLAGMASK(FLAGSET(Params, ecIgnoreStdErr), coIgnoreStdErr);
@@ -1627,7 +1641,7 @@ void TSCPFileSystem::AnyCommand(const UnicodeString & Command,
   try__finally
   {
     const int32_t Params =
-      ecDefault |
+       ecDefault | ecOnlyReturnCode |
       (FTerminal->SessionData->GetExitCode1IsError() ? ecIgnoreStdErr : ecIgnoreWarnings);
 
     ExecCommand(fsAnyCommand, Params, Command);
@@ -2049,8 +2063,7 @@ void TSCPFileSystem::SCPSource(const UnicodeString & AFileName,
 
     try
     {
-      TValueRestorer<TSecureShellMode> SecureShellModeRestorer(FSecureShell->Mode);
-      FSecureShell->Mode = ssmUploading;
+      TValueRestorer<TSecureShellMode> SecureShellModeRestorer(FSecureShell->Mode, ssmUploading);
 
       // During ASCII transfer we will load whole file to this buffer
       // than convert EOL and send it at once, because before converting EOL
@@ -2554,8 +2567,7 @@ void TSCPFileSystem::SCPSink(const UnicodeString & TargetDir,
 
   FileData.SetTime = 0;
 
-  TValueRestorer<TSecureShellMode> SecureShellModeRestorer(FSecureShell->Mode);
-  FSecureShell->Mode = ssmDownloading;
+  TValueRestorer<TSecureShellMode> SecureShellModeRestorer(FSecureShell->Mode, ssmDownloading);
 
   FSecureShell->SendNull();
 
