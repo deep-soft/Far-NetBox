@@ -203,7 +203,7 @@ int CAsyncSslSocketLayer::ProcessSendBuffer()
   int numwrite = BIO_write(m_sslbio, m_pRetrySendBuffer, m_nRetrySendBufferLen);
   if (numwrite >= 0)
   {
-    BIO_ctrl(m_sslbio, BIO_CTRL_FLUSH, 0, NULL);
+    BIO_ctrl(m_sslbio, BIO_CTRL_FLUSH, 0, nullptr);
     nb_free(m_pRetrySendBuffer);
     m_pRetrySendBuffer = 0;
     return numwrite;
@@ -284,6 +284,7 @@ void CAsyncSslSocketLayer::OnSend(int nErrorCode)
       if (numsent == SOCKET_ERROR || numsent < numread)
       {
         if (numsent == SOCKET_ERROR)
+        {
           if (GetLastError() != WSAEWOULDBLOCK && GetLastError() != WSAENOTCONN)
           {
             m_nNetworkError = GetLastError();
@@ -291,7 +292,10 @@ void CAsyncSslSocketLayer::OnSend(int nErrorCode)
             return;
           }
           else
+          {
             numsent = 0;
+          }
+        }
 
         // Add all data that was retrieved from the network bio but could not be sent to the send buffer.
         if (m_nNetworkSendBufferMaxLen < (m_nNetworkSendBufferLen + numread - numsent))
@@ -1099,17 +1103,17 @@ void CAsyncSslSocketLayer::LogSslError(const SSL *s, const char * str, const cha
 {
   USES_CONVERSION;
   const char * StateString = SSL_state_string_long(s);
-  if ((strcmp(StateString, "error") != 0) || (debug != NULL))
+  if ((strcmp(StateString, "error") != 0) || (debug != nullptr))
   {
-    char * buffer = new char[4096 + ((debug != NULL) ? strlen(debug) : 0)];
+    char * buffer = nb::chcalloc(4096 + ((debug != nullptr) ? strlen(debug) : 0));
     sprintf(buffer, fmt, str, StateString);
-    if (debug != NULL)
+    if (debug != nullptr)
     {
       sprintf(buffer + strlen(buffer), " [%s]", debug);
       OPENSSL_free(debug);
     }
     LogSocketMessageRaw(nMessageType, A2T(buffer));
-    delete[] buffer;
+    nb_free(buffer);
   }
 }
 
@@ -1379,9 +1383,9 @@ BOOL CAsyncSslSocketLayer::GetPeerCertificateData(t_SslCertData &SslCertData, LP
       default:
         if ( !OBJ_nid2sn(OBJ_obj2nid(pObject)) )
         {
-          TCHAR tmp[20];
+          TCHAR tmp[20]{};
           _stprintf(tmp, L"%d", OBJ_obj2nid(pObject));
-          size_t  maxlen = 1024 - _tcslen(SslCertData.subject.Other)-1;
+          size_t maxlen = 1024 - _tcslen(SslCertData.subject.Other)-1;
           _tcsncpy(SslCertData.subject.Other+_tcslen(SslCertData.subject.Other), tmp, maxlen);
 
           maxlen = 1024 - _tcslen(SslCertData.subject.Other)-1;
@@ -1429,7 +1433,7 @@ BOOL CAsyncSslSocketLayer::GetPeerCertificateData(t_SslCertData &SslCertData, LP
 
       CString str;
 
-      uint8_t *out;
+      uint8_t *out = nullptr;
       int len = ASN1_STRING_to_UTF8(&out, pString);
       if (len > 0)
       {
@@ -1488,7 +1492,7 @@ BOOL CAsyncSslSocketLayer::GetPeerCertificateData(t_SslCertData &SslCertData, LP
       default:
         if ( !OBJ_nid2sn(OBJ_obj2nid(pObject)) )
         {
-          TCHAR tmp[20];
+          TCHAR tmp[20]{};
           _stprintf(tmp, L"%d", OBJ_obj2nid(pObject));
           size_t maxlen = 1024 - _tcslen(SslCertData.issuer.Other)-1;
           _tcsncpy(SslCertData.issuer.Other+_tcslen(SslCertData.issuer.Other), tmp, maxlen);
@@ -1566,7 +1570,7 @@ BOOL CAsyncSslSocketLayer::GetPeerCertificateData(t_SslCertData &SslCertData, LP
     if (X509V3_EXT_print(subjectAltNameBio, subjectAltNameExtension, 0, 0) == 1)
     {
       USES_CONVERSION;
-      u_char *data;
+      u_char *data = nullptr;
       int len = BIO_get_mem_data(subjectAltNameBio, &data);
       char * buf = nb::chcalloc(len + 1);
 
@@ -1832,7 +1836,7 @@ BOOL CAsyncSslSocketLayer::SetCertStorage(CString file)
 void CAsyncSslSocketLayer::OnClose(int nErrorCode)
 {
   m_onCloseCalled = true;
-  if (m_bUseSSL) // && BIO_ctrl)
+  if (m_bUseSSL)
   {
     size_t pending = BIO_ctrl_pending(m_sslbio);
     if (pending > 0)
@@ -1867,7 +1871,7 @@ void CAsyncSslSocketLayer::PrintLastErrorMsg()
     }
     else
     {
-      UnicodeString S = GetTlsErrorStr(aerr);
+      const UnicodeString S = GetTlsErrorStr(aerr);
       LogSocketMessageRaw(FZ_LOG_WARNING, S.c_str());
     }
   }
@@ -1903,7 +1907,7 @@ void CAsyncSslSocketLayer::TriggerEvents()
   }
   else
   {
-    size_t len = BIO_ctrl_get_write_guarantee(m_nbio);
+    const size_t len = BIO_ctrl_get_write_guarantee(m_nbio);
     if (len > 0 && m_mayTriggerRead)
     {
       m_mayTriggerRead = false;
