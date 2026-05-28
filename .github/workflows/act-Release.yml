@@ -40,6 +40,7 @@ jobs:
 
     env:
       PROG_NAME: 'Far-NetBox'
+      PROG_PATH: 'Plugins/NetBox'
       BUILD_TYPE: Release
 #      BUILD_TYPE: RelWithDebInfo
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -145,7 +146,7 @@ jobs:
       - name: Verify plugin directory
         shell: bash
         run: |
-          PLUGIN_DIR="./Far3_${{ matrix.platform }}/Plugins/NetBox"
+          PLUGIN_DIR="./Far3_${{ matrix.platform }}/${{ env.PROG_PATH}}"
           if [[ ! -d "$PLUGIN_DIR" ]]; then
             echo "::error::Plugin directory not found: $PLUGIN_DIR"
             exit 1
@@ -184,8 +185,8 @@ jobs:
         uses: deep-soft/zip-release@v5
         with:
           type: '7z'
-          filename: '${{ env.netbox_name }}.7z'
-          directory: '${{github.workspace}}/Far3_${{ matrix.platform }}/Plugins'
+          filename: '${{github.workspace}}/${{ env.netbox_name }}'
+          directory: '${{github.workspace}}/Far3_${{ matrix.platform }}/${{ env.PROG_PATH}}'
           path: '.'
           debug: yes
 
@@ -193,7 +194,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.PROG_NAME }}.${{ matrix.platform_label }}
-          path: ./*.7z
+          path: '${{github.workspace}}/*.7z'
           overwrite: true
           retention-days: 30
 
