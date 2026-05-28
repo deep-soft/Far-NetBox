@@ -260,10 +260,10 @@ jobs:
         run: |
           echo "${{ env.VERSION }}" > ${{ env.PROG_NAME }}-latest.txt
           rm *pdb.7z || true;
-          mv ${{ env.PROG_NAME }}.${{ matrix.platform }}*.7z ${{ env.PROG_NAME }}.${{ matrix.platform }}.7z || true;
-          #mv ${{ env.PROG_NAME }}.x64*.7z ${{ env.PROG_NAME }}.x64.7z || true;
-          #mv ${{ env.PROG_NAME }}.x86*.7z ${{ env.PROG_NAME }}.x86.7z || true;
-          #mv ${{ env.PROG_NAME }}.ARM64*.7z ${{ env.PROG_NAME }}.ARM64.7z || true;
+          #old mv ${{ env.PROG_NAME }}.${{ matrix.platform }}*.7z ${{ env.PROG_NAME }}.${{ matrix.platform }}.7z || true;
+          mv ${{ env.PROG_NAME }}.x64*.7z ${{ env.PROG_NAME }}.x64.7z || true;
+          mv ${{ env.PROG_NAME }}.x86*.7z ${{ env.PROG_NAME }}.x86.7z || true;
+          mv ${{ env.PROG_NAME }}.ARM64*.7z ${{ env.PROG_NAME }}.ARM64.7z || true;
 
       - name: Publish latest Release
         continue-on-error: false
@@ -275,6 +275,7 @@ jobs:
           body: "${{ env.PROG_NAME }} latest: v${{ env.version }}"
           files: |
             FarNetBox/${{ env.PROG_NAME }}.${{ matrix.platform }}.7z
+            FarNetBox/${{ env.PROG_NAME }}*.7z
             FarNetBox/${{ env.PROG_NAME }}-latest.txt
 
       - name: Cleanup
