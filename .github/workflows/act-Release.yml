@@ -207,7 +207,7 @@ jobs:
       - name: Download archives
         uses: actions/download-artifact@v7
         with:
-          pattern: FarNetBox.*
+          pattern: *.7z
           path: FarNetBox/
           merge-multiple: true
 
