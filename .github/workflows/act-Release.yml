@@ -193,6 +193,7 @@ jobs:
     timeout-minutes: 10
 
     env:
+      PROG_NAME: 'Far-NetBox'
       version: ${{ needs.build.outputs.version }}
       version_short: ${{ needs.build.outputs.version_short }}
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -223,35 +224,35 @@ jobs:
             exit 1
           fi
 
-      - name: Create GitHub Release
-        shell: bash
-        run: |
-          set -euo pipefail
-          RELEASE_TAG="v${{ env.version_short }}"
-          RELEASE_TITLE="NetBox ${{ env.version_short }}"
-          echo "Creating release: $RELEASE_TAG"
-          echo "Title: $RELEASE_TITLE"
-          gh release create "$RELEASE_TAG" \
-            --draft \
-            --generate-notes \
-            --title "$RELEASE_TITLE" \
-            FarNetBox/*.7z
-          echo "Release created successfully"
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#      - name: Create GitHub Release
+#        shell: bash
+#        run: |
+#          set -euo pipefail
+#          RELEASE_TAG="v${{ env.version_short }}"
+#          RELEASE_TITLE="NetBox ${{ env.version_short }}"
+#          echo "Creating release: $RELEASE_TAG"
+#          echo "Title: $RELEASE_TITLE"
+#          gh release create "$RELEASE_TAG" \
+#            --draft \
+#            --generate-notes \
+#            --title "$RELEASE_TITLE" \
+#            FarNetBox/*.7z
+#          echo "Release created successfully"
+#        env:
+#          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+#          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-#       - name: Publish Release
-#         #old ${{ env.PROG_NAME }}.${{ matrix.platform }}*.7z
-#         continue-on-error: true
-#         uses: deep-soft/action-gh-release@v3
-#         with:
-#           draft: false
-#           name: "${{ env.PROG_NAME }} v${{ env.version }}"
-#           tag_name: "v${{ env.version }}"
-#           body: "Far ${{ env.PROG_NAME }}: v${{ env.version }}"
-#           files: |
-#             FarNetBox/*.7z
+       - name: Publish Release
+         #old ${{ env.PROG_NAME }}.${{ matrix.platform }}*.7z
+         continue-on-error: true
+         uses: deep-soft/action-gh-release@v3
+         with:
+           draft: false
+           name: "${{ env.PROG_NAME }} v${{ env.version }}"
+           tag_name: "v${{ env.version }}"
+           body: "Far ${{ env.PROG_NAME }}: v${{ env.version }}"
+           files: |
+             FarNetBox/*.7z
 
       - name: Prepare latest Release
         continue-on-error: false
