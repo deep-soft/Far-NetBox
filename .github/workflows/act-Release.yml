@@ -153,31 +153,41 @@ jobs:
           echo "Plugin directory contents:"
           ls -la "$PLUGIN_DIR"
 
-      - name: Pack artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          PLUGIN_DIR="./Far3_${{ matrix.platform }}/Plugins"
-          # Main archive (exclude PDB files)
-          echo "Creating main archive: ${{ env.netbox_name }}"
-          7z a -m0=LZMA -mf=BCJ2 -mx9 "${{ env.netbox_name }}" "${PLUGIN_DIR}/" -xr!*.pdb -xr!NetBox.map \
-               -xr!NetBoxPol.lng -xr!NetBoxRus.lng -xr!NetBoxSpa.lng -xr!README.PL.md -xr!README.RU.md
-          # PDB archive (only if exists)
-          PDB_FILE="${PLUGIN_DIR}/NetBox/NetBox.pdb"
-          if [[ -f "$PDB_FILE" ]]; then
-            echo "Creating PDB archive: ${{ env.netbox_pdb_name }}"
-            7z a -m0=LZMA -mf=off -mx9 "${{ env.netbox_pdb_name }}" "$PDB_FILE"
-          else
-            echo "::warning::PDB file not found: $PDB_FILE"
-          fi
-          # Display archive sizes
-          if [[ -f "${{ env.netbox_name }}" ]]; then
-            echo "Main archive size: $(du -h "${{ env.netbox_name }}" | cut -f1)"
-            7z l "${{ env.netbox_name }}"
-          fi
-          if [[ -f "${{ env.netbox_pdb_name }}" ]]; then
-            echo "PDB archive size: $(du -h "${{ env.netbox_pdb_name }}" | cut -f1)"
-          fi
+#       - name: Pack artifacts
+#         shell: bash
+#         run: |
+#           set -euo pipefail
+#           PLUGIN_DIR="./Far3_${{ matrix.platform }}/Plugins"
+#           # Main archive (exclude PDB files)
+#           echo "Creating main archive: ${{ env.netbox_name }}"
+#           7z a -m0=LZMA -mf=BCJ2 -mx9 "${{ env.netbox_name }}" "${PLUGIN_DIR}/" -xr!*.pdb -xr!NetBox.map \
+#                -xr!NetBoxPol.lng -xr!NetBoxRus.lng -xr!NetBoxSpa.lng -xr!README.PL.md -xr!README.RU.md
+#           # PDB archive (only if exists)
+#           PDB_FILE="${PLUGIN_DIR}/NetBox/NetBox.pdb"
+#           if [[ -f "$PDB_FILE" ]]; then
+#             echo "Creating PDB archive: ${{ env.netbox_pdb_name }}"
+#             7z a -m0=LZMA -mf=off -mx9 "${{ env.netbox_pdb_name }}" "$PDB_FILE"
+#           else
+#             echo "::warning::PDB file not found: $PDB_FILE"
+#           fi
+#           # Display archive sizes
+#           if [[ -f "${{ env.netbox_name }}" ]]; then
+#             echo "Main archive size: $(du -h "${{ env.netbox_name }}" | cut -f1)"
+#             7z l "${{ env.netbox_name }}"
+#           fi
+#           if [[ -f "${{ env.netbox_pdb_name }}" ]]; then
+#             echo "PDB archive size: $(du -h "${{ env.netbox_pdb_name }}" | cut -f1)"
+#           fi
+
+      - name: Archive Release
+        continue-on-error: true
+        uses: deep-soft/zip-release@v5
+        with:
+          type: '7z'
+          filename: '${{ env.netbox_name }}.7z'
+          directory: '${{github.workspace}}/Far3_${{ matrix.platform }}/Plugins'
+          path: '.'
+          debug: yes
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
