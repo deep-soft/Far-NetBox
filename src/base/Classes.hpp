@@ -3,6 +3,7 @@
 #include <nbsystem.h>
 
 #include <stdexcept>
+#include <memory>
 #include <limits>
 // #include <stdarg.h>
 #include <cmath>
@@ -83,8 +84,8 @@ private:
   TObjectClassId FKind{0};
 };
 
-template<class O> inline O * cast_to(TObject * p) { return rtti::dyn_cast_or_null<O>(p); }
-template<class O> inline const O * cast_to(const TObject * p) { return rtti::dyn_cast_or_null<const O>(p); }
+template<class O> inline O * cast_to(TObject * p) { return nb::dyn_cast_or_null<O>(p); }
+template<class O> inline const O * cast_to(const TObject * p) { return nb::dyn_cast_or_null<const O>(p); }
 template <class T>
 inline TObject * ToObj(const T & a) { return reinterpret_cast<TObject *>(nb::ToIntPtr(a)); }
 
@@ -339,7 +340,6 @@ class NB_CORE_EXPORT TObjectList : public TList
 public:
   static bool classof(const TObject * Obj) { return Obj->is(OBJECT_CLASS_TObjectList); }
   virtual bool is(TObjectClassId Kind) const override { return (Kind == OBJECT_CLASS_TObjectList) || TList::is(Kind); }
-
 public:
   TObjectList() : TObjectList(OBJECT_CLASS_TObjectList) {}
   using TList::TList;
@@ -439,6 +439,16 @@ public:
   // TODO: ROIndexedProperty<TObject *> Objects{nb::bind(&TStrings::GetObject, this)};
   // TODO: ROIndexedProperty<UnicodeString> Names{nb::bind(&TStrings::GetName, this)};
   const ROIndexedProperty<UnicodeString> Strings{nb::bind(&TStrings::GetStrings, this)};
+
+#if !defined(__BORLANDC__)
+public:
+  UnicodeString Values(const UnicodeString & AName) const { return GetValue(AName); }
+  void Values(const UnicodeString & AName, const UnicodeString & AValue) { SetValue(AName, AValue); }
+  UnicodeString ValueFromIndex(int32_t Index) const { return GetValueFromIndex(Index); }
+  UnicodeString Names(int32_t Index) const { return GetName(Index); }
+  UnicodeString GetNames(int32_t Index) const { return GetName(Index); }
+#endif
+
 
 protected:
   UnicodeString GetStrings(int32_t Index) const { return GetString(Index); }
@@ -846,12 +856,11 @@ public:
   explicit TSafeHandleStream(THandle AHandle) noexcept;
   TSafeHandleStream(gsl::not_null<THandleStream *> Source, bool Own);
   virtual ~TSafeHandleStream() noexcept override;
-  static TSafeHandleStream * CreateFromFile(const UnicodeString & FileName, uint16_t Mode);
+  static std::unique_ptr<TSafeHandleStream> CreateFromFile(const UnicodeString & FileName, uint16_t Mode);
   virtual int64_t Read(void * Buffer, int64_t Count) override;
   virtual int64_t Write(const void * Buffer, int64_t Count) override;
 private:
   gsl::owner<THandleStream *> FSource{nullptr};
-  bool FOwned{false};
 };
 
 class NB_CORE_EXPORT EReadError : public std::runtime_error
@@ -1121,6 +1130,7 @@ public:
 
 private:
   void InitPlatformId();
+  static std::ostream & NullStream();
 private:
   std::ofstream dbgstream_;
 };
@@ -1148,3 +1158,6 @@ public:
     catch(...) {}
   }
 };
+
+NB_CORE_EXPORT TShortCut TextToShortCut(const UnicodeString & Str);
+NB_CORE_EXPORT bool IsCustomShortCut(const TShortCut & ShortCut);

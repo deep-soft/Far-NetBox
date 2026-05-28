@@ -1,10 +1,14 @@
 #include <Global.h>
+#include <cassert>
 #include <tinylog/platform_win32.h>
+
+#include <mutex>
+#include <vector>
+#include <algorithm>
 
 #include <tinylog/TinyLog.h>
 #include <tinylog/LogStream.h>
 #include <tinylog/Config.h>
-
 namespace tinylog {
 
 class TinyLogImpl
@@ -22,6 +26,7 @@ public:
 
   size_t Write(const char * data, size_t ToWrite);
   void Close();
+  bool EmergencyFlush(uint32_t TimeoutMs);
 
 private:
   TinyLogImpl(TinyLogImpl const &) = delete;
@@ -32,15 +37,15 @@ private:
   static DWORD WINAPI ThreadFunc(void *pt_arg);
   int32_t MainLoop();
 
-  std::unique_ptr<LogStream> logstream_;
+  LogStream * logstream_{nullptr};
   Utils::LogLevel log_level_{Utils::LEVEL_INFO};
 
   pthread_t thrd_{INVALID_HANDLE_VALUE};
   DWORD ThreadId_{0};
   pthread_mutex_t mutex_;
   pthread_cond_t cond_;
-  bool run_{false};
-  bool drain_buffer_{false};
+  std::atomic<bool> run_{false};
+  std::atomic<bool> drain_buffer_{false};
 };
 
 TinyLogImpl::TinyLogImpl(FILE * file) noexcept :
@@ -52,7 +57,13 @@ TinyLogImpl::TinyLogImpl(FILE * file) noexcept :
 {
   pthread_mutex_init(&mutex_, nullptr);
   pthread_cond_init(&cond_, nullptr);
-  logstream_ = std::make_unique<LogStream>(file, mutex_, cond_, drain_buffer_);
+  void * ls_mem = nb::chcalloc(sizeof(LogStream));
+  if (!ls_mem)
+  {
+    OutputDebugStringA("tinylog: FATAL: nb::chcalloc failed for LogStream\n");
+    std::abort();
+  }
+  logstream_ = new(ls_mem) LogStream(file, mutex_, cond_, drain_buffer_);
   void * Parameter = this;
 
   thrd_ = ::CreateThread(nullptr,
@@ -60,7 +71,6 @@ TinyLogImpl::TinyLogImpl(FILE * file) noexcept :
     static_cast<LPTHREAD_START_ROUTINE>(&TinyLogImpl::ThreadFunc),
     Parameter,
     0, &ThreadId_);
-  os::debug::SetThreadName(thrd_, L"Log processor");
 }
 
 TinyLogImpl::~TinyLogImpl() noexcept
@@ -105,15 +115,50 @@ size_t TinyLogImpl::Write(const char * data, size_t ToWrite)
 
 void TinyLogImpl::Close()
 {
-  if (run_)
+  if (run_.load(std::memory_order_relaxed))
   {
-    run_ = false;
+    run_.store(false, std::memory_order_release);
     pthread_mutex_lock(&mutex_);
     pthread_cond_signal(&cond_);
     pthread_mutex_unlock(&mutex_);
     pthread_join(thrd_, nullptr);
-    logstream_.reset();
+    if (logstream_)
+    {
+      logstream_->~LogStream();
+      nb_free(logstream_);
+      logstream_ = nullptr;
+    }
   }
+}
+
+bool TinyLogImpl::EmergencyFlush(uint32_t TimeoutMs)
+{
+  bool flushed = false;
+  if (logstream_)
+  {
+    flushed = logstream_->EmergencyFlush();
+  }
+
+  if (flushed)
+  {
+    run_.store(false, std::memory_order_release);
+    pthread_mutex_lock(&mutex_);
+    pthread_cond_signal(&cond_);
+    pthread_mutex_unlock(&mutex_);
+
+    DWORD wait_result = WaitForSingleObject(thrd_, TimeoutMs);
+    if (wait_result == WAIT_TIMEOUT)
+    {
+      OutputDebugStringA("tinylog: EmergencyFlush worker thread timeout\n");
+    }
+  }
+
+  char msg[256];
+  _snprintf_s(msg, sizeof(msg), _TRUNCATE,
+    "tinylog: TinyLogImpl::EmergencyFlush result=%d\n", flushed ? 1 : 0);
+  OutputDebugStringA(msg);
+
+  return flushed;
 }
 
 DWORD WINAPI TinyLogImpl::ThreadFunc(void * pt_arg)
@@ -130,9 +175,9 @@ int32_t TinyLogImpl::MainLoop()
   const DWORD timeout_millisecs = 1000 * TIME_OUT_SECOND;
 
   pthread_mutex_lock(&mutex_);
-  while (run_)
+  while (run_.load(std::memory_order_acquire))
   {
-    while (run_ && !drain_buffer_)
+    while (run_.load(std::memory_order_acquire) && !drain_buffer_.load(std::memory_order_acquire))
     {
       result = pthread_cond_timedwait(&cond_, &mutex_, timeout_millisecs);
       if (result == WAIT_TIMEOUT)
@@ -143,11 +188,11 @@ int32_t TinyLogImpl::MainLoop()
 
     logstream_->WriteBuffer();
 
-    if (drain_buffer_)
+    if (drain_buffer_.load(std::memory_order_acquire))
     {
       logstream_->SwapBuffer();
       logstream_->UpdateBaseTime();
-      drain_buffer_ = false;
+      drain_buffer_.store(false, std::memory_order_release);
     }
   }
   pthread_mutex_unlock(&mutex_);
@@ -155,22 +200,127 @@ int32_t TinyLogImpl::MainLoop()
   return 0;
 }
 
-TinyLog * TinyLog::instance_ = nullptr;
+bool TinyLog::destroyed_ = false;
 
-TinyLog::TinyLog() noexcept :
-  impl_(std::make_unique<TinyLogImpl>(nullptr))
+static std::mutex g_registry_mutex;
+static std::vector<TinyLog *> g_registry;
+
+void TinyLog::Register(TinyLog * logger)
 {
+  std::lock_guard<std::mutex> lock(g_registry_mutex);
+  g_registry.push_back(logger);
+  char msg[256];
+  _snprintf_s(msg, sizeof(msg), _TRUNCATE, "tinylog: Registered instance (total: %zu)\n", g_registry.size());
+  OutputDebugStringA(msg);
+}
+
+void TinyLog::Unregister(TinyLog * logger)
+{
+  std::lock_guard<std::mutex> lock(g_registry_mutex);
+  auto it = std::find(g_registry.begin(), g_registry.end(), logger);
+  if (it != g_registry.end())
+  {
+    g_registry.erase(it);
+  }
+  char msg[256];
+  _snprintf_s(msg, sizeof(msg), _TRUNCATE, "tinylog: Unregistered instance (total: %zu)\n", g_registry.size());
+  OutputDebugStringA(msg);
+}
+
+bool TinyLog::EmergencyFlushAll(uint32_t TimeoutMs)
+{
+  std::lock_guard<std::mutex> lock(g_registry_mutex);
+  uint32_t remaining = TimeoutMs;
+  bool all_ok = true;
+  char msg[256];
+  _snprintf_s(msg, sizeof(msg), _TRUNCATE,
+    "tinylog: EmergencyFlushAll starting (%zu instances, timeout: %u ms)\n",
+    g_registry.size(), TimeoutMs);
+  OutputDebugStringA(msg);
+  for (TinyLog * logger : g_registry)
+  {
+    if (remaining == 0)
+    {
+      all_ok = false;
+      break;
+    }
+    uint32_t per_instance = 50;
+    if (per_instance > remaining)
+      per_instance = remaining;
+    try
+    {
+      if (!logger->EmergencyFlush(per_instance))
+        all_ok = false;
+    }
+    catch (...)
+    {
+      OutputDebugStringA("tinylog: EmergencyFlushAll: instance flush failed\n");
+      all_ok = false;
+    }
+    remaining -= per_instance;
+  }
+  _snprintf_s(msg, sizeof(msg), _TRUNCATE,
+    "tinylog: EmergencyFlushAll complete (ok=%d)\n", all_ok ? 1 : 0);
+  OutputDebugStringA(msg);
+  return all_ok;
+}
+
+TinyLog::TinyLog() noexcept
+{
+  void * impl_mem = nb::chcalloc(sizeof(TinyLogImpl));
+  if (!impl_mem)
+  {
+    OutputDebugStringA("tinylog: FATAL: nb::chcalloc failed for TinyLogImpl\n");
+    std::abort();
+  }
+  impl_ = new(impl_mem) TinyLogImpl(nullptr);
+  Register(this);
 }
 
 TinyLog::~TinyLog() noexcept
 {
+  Unregister(this);
+  if (impl_)
+  {
+    impl_->~TinyLogImpl();
+    nb_free(impl_);
+    impl_ = nullptr;
+  }
+  destroyed_ = true;
 }
 
 auto TinyLog::instance() -> TinyLog * &
 {
-  if (!instance_)
-    instance_ = new TinyLog();
-  return instance_;
+  static TinyLog * s_instance = nullptr;
+  static std::once_flag s_once;
+  static TinyLog * s_null = nullptr;
+
+  if (destroyed_)
+    return s_null;
+
+  std::call_once(s_once, [&]() {
+    void * mem = nb::chcalloc(sizeof(TinyLog));
+    if (!mem)
+    {
+      OutputDebugStringA("tinylog: FATAL: nb::chcalloc failed for TinyLog singleton\n");
+      std::abort();
+    }
+    s_instance = new(mem) TinyLog();
+  });
+
+  return s_instance;
+}
+
+void TinyLog::DestroyInstance() noexcept
+{
+  TinyLog * & inst = TinyLog::instance();
+  if (inst)
+  {
+    inst->~TinyLog();
+    nb_free(inst);
+    inst = nullptr;
+    LogStream::CleanupTls();
+  }
 }
 
 void TinyLog::level(Utils::LogLevel log_level)
@@ -202,6 +352,11 @@ size_t TinyLog::Write(const char * data, size_t ToWrite)
 void TinyLog::Close()
 {
   impl_->Close();
+}
+
+bool TinyLog::EmergencyFlush(uint32_t TimeoutMs)
+{
+  return impl_->EmergencyFlush(TimeoutMs);
 }
 
 #if defined(_DEBUG)

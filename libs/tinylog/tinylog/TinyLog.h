@@ -38,12 +38,18 @@ public:
   size_t Write(const char * data, size_t ToWrite);
   void Close();
 
+  bool EmergencyFlush(uint32_t TimeoutMs);
+
+  static void Register(TinyLog * logger);
+  static void Unregister(TinyLog * logger);
+  static bool EmergencyFlushAll(uint32_t TimeoutMs);
+  static void DestroyInstance() noexcept;
+
   // TODO: group / groupEnd
 
 private:
-  static TinyLog * instance_;
-  std::unique_ptr<TinyLogImpl> impl_;
-
+  static bool destroyed_; // prevents lazy re-creation after shutdown
+  TinyLogImpl * impl_{nullptr};
 private:
   TinyLog(TinyLog const &) = delete;
   void operator =(TinyLog const &) = delete;
