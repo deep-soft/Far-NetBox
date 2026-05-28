@@ -179,81 +179,83 @@ jobs:
             echo "PDB archive size: $(du -h "${{ env.netbox_pdb_name }}" | cut -f1)"
           fi
 
-#       - name: Upload artifacts
-#         uses: actions/upload-artifact@v7
-#         with:
-#           name: FarNetBox.${{ matrix.platform_label }}
-#           path: ./*.7z
-#           overwrite: true
-#           retention-days: 30
-# 
-#   create-release:
-#     needs: [build]
-#     runs-on: windows-2022
-#     timeout-minutes: 10
-# 
-#     env:
-#       version: ${{ needs.build.outputs.version }}
-#       version_short: ${{ needs.build.outputs.version_short }}
-#       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-# 
-#     steps:
-#       - name: Checkout source
-#         uses: deep-soft/checkout@v6
-# 
-#         with:
-#           fetch-depth: 0
-# 
-#       - name: Download archives
-#         uses: actions/download-artifact@v7
-#         with:
-#           pattern: FarNetBox.*
-#           path: FarNetBox/
-#           merge-multiple: true
-
-#       - name: Verify downloaded files
-#         shell: bash
-#         run: |
-#           echo "Downloaded artifacts:"
-#           ls -laR FarNetBox/
-#           ARCHIVE_COUNT=$(find FarNetBox/ -name "*.7z" | wc -l)
-#           echo "Total .7z archives: $ARCHIVE_COUNT"
-#           if [[ "$ARCHIVE_COUNT" -lt 1 ]]; then
-#             echo "::error::No .7z archives found"
-#             exit 1
-#           fi
-# 
-#       - name: Create GitHub Release
-#         shell: bash
-#         run: |
-#           set -euo pipefail
-#           RELEASE_TAG="v${{ env.version_short }}"
-#           RELEASE_TITLE="NetBox ${{ env.version_short }}"
-#           echo "Creating release: $RELEASE_TAG"
-#           echo "Title: $RELEASE_TITLE"
-#           gh release create "$RELEASE_TAG" \
-#             --draft \
-#             --generate-notes \
-#             --title "$RELEASE_TITLE" \
-#             FarNetBox/*.7z
-#           echo "Release created successfully"
-#         env:
-#           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-#           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish Release
-        continue-on-error: true
-        uses: deep-soft/action-gh-release@v3
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
         with:
-          draft: false
-          name: "${{ env.PROG_NAME }} v${{ env.version }}"
-          tag_name: "v${{ env.version }}"
-          body: "Far ${{ env.PROG_NAME }}: v${{ env.version }}"
-          files: |
-            ${{ env.PROG_NAME }}.${{ matrix.platform }}*.7z
+          name: FarNetBox.${{ matrix.platform_label }}
+          path: ./*.7z
+          overwrite: true
+          retention-days: 30
+
+  create-release:
+    needs: [build]
+    runs-on: windows-2022
+    timeout-minutes: 10
+
+    env:
+      version: ${{ needs.build.outputs.version }}
+      version_short: ${{ needs.build.outputs.version_short }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout source
+        uses: deep-soft/checkout@v6
+
+        with:
+          fetch-depth: 0
+
+      - name: Download archives
+        uses: actions/download-artifact@v7
+        with:
+          pattern: FarNetBox.*
+          path: FarNetBox/
+          merge-multiple: true
+
+      - name: Verify downloaded files
+        shell: bash
+        run: |
+          echo "Downloaded artifacts:"
+          ls -laR FarNetBox/
+          ARCHIVE_COUNT=$(find FarNetBox/ -name "*.7z" | wc -l)
+          echo "Total .7z archives: $ARCHIVE_COUNT"
+          if [[ "$ARCHIVE_COUNT" -lt 1 ]]; then
+            echo "::error::No .7z archives found"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="v${{ env.version_short }}"
+          RELEASE_TITLE="NetBox ${{ env.version_short }}"
+          echo "Creating release: $RELEASE_TAG"
+          echo "Title: $RELEASE_TITLE"
+          gh release create "$RELEASE_TAG" \
+            --draft \
+            --generate-notes \
+            --title "$RELEASE_TITLE" \
+            FarNetBox/*.7z
+          echo "Release created successfully"
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+#       - name: Publish Release
+#         #old ${{ env.PROG_NAME }}.${{ matrix.platform }}*.7z
+#         continue-on-error: true
+#         uses: deep-soft/action-gh-release@v3
+#         with:
+#           draft: false
+#           name: "${{ env.PROG_NAME }} v${{ env.version }}"
+#           tag_name: "v${{ env.version }}"
+#           body: "Far ${{ env.PROG_NAME }}: v${{ env.version }}"
+#           files: |
+#             FarNetBox/*.7z
 
       - name: Prepare latest Release
         continue-on-error: false
+        working-directory: FarNetBox/
         shell: bash
         run: |
           echo "${{ env.VERSION }}" > ${{ env.PROG_NAME }}-latest.txt
@@ -272,12 +274,12 @@ jobs:
           tag_name: "${{ env.PROG_NAME }}-latest"
           body: "${{ env.PROG_NAME }} latest: v${{ env.version }}"
           files: |
-            ${{ env.PROG_NAME }}.${{ matrix.platform }}.7z
-            ${{ env.PROG_NAME }}-latest.txt
+            FarNetBox/${{ env.PROG_NAME }}.${{ matrix.platform }}.7z
+            FarNetBox/${{ env.PROG_NAME }}-latest.txt
 
       - name: Cleanup
         continue-on-error: true
         shell: bash
         run: |
-          rm ./*.7z || true;
-          rm ./*.zip || true;
+          rm ./FarNetBox/*.7z || true;
+          rm ./FarNetBox/*.zip || true;
