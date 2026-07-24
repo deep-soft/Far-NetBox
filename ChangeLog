@@ -1,8 +1,17 @@
+## [26.7.3.617] - 2026-07-24
+
+ * Fix FTP session hang at "Starting the session..."
+https://github.com/michaellukashov/Far-NetBox/issues/529
+ * Fix SCP crash
+https://github.com/michaellukashov/Far-NetBox/issues/530
+## [26.7.3.616] - 2026-07-24
+
 ## [26.7.3.616] - 2026-07-24
 
 ### Added
 
- * Add temporary download directory option and serialization to transfer settings https://github.com/michaellukashov/Far-NetBox/issues/525
+ * Add temporary download directory option and serialization to transfer settings
+https://github.com/michaellukashov/Far-NetBox/issues/525
  * Add FTP NOOP heartbeat interval option to prevent connection timeout
  * Add confirmation prompt before disconnecting when navigating up from root remote directory
 
@@ -13,7 +22,7 @@ saved to a relative path instead of preserving the specified absolute path
 https://forum.farmanager.com/viewtopic.php?p=181723#p181723
  * Fix dialog layout and sizing for WinSCP session configuration — WinSCP session dialog adjustments
 https://forum.farmanager.com/viewtopic.php?p=182981#p182981
-* Fix FAR crash when using netBox FTP/SFTP https://bugs.farmanager.com/view.php?id=4104
+ * Fix FAR crash when using netBox FTP/SFTP https://bugs.farmanager.com/view.php?id=4104
 0004104: FAR crashes when I use netBox FTP/SFTP
  * Fix atomic shutdown flag and reentrancy guard for tinylog teardown (issue #313)
  * Fix Esc hang and cancellation failures in SCP transfers — prevent deadlock on Close with message pumping (#511)
@@ -24,15 +33,10 @@ https://forum.farmanager.com/viewtopic.php?p=182981#p182981
  * Fix FileZilla re-entrant List and ResetOperation calls that could corrupt FTP directory state
  * Fix terminal robustness — improved error handling and reconnect logic
  * Fix DLL module pinning to prevent crash on unload during Far Manager shutdown
- * Fix nullptr safety guards in core file operations — add null checks for TRemoteFile, FTerminal, and AOperationProgress
  * Fix dialog width for multi-line button layout — correct off-by-one in bounds calculation
  * Fix banner suppression — handle dynamic content changes reliably
  * Fix SCP, S3, WebDAV to enable missing protocol capabilities
- * Fix master password prompt — strip hotkey ampersand (&&) from InputBox text
- * Fix TStringList GUID pointer deletion — prevent freeing non-TObject pointers in plugin layer
  * Fix SFTP general error handling and robustness improvements
- * Remove debug log output from NOOP heartbeat command
- * Revert temporary debug code from FTP issue #389 investigation
 
 ### Dependencies
 
