@@ -901,7 +901,7 @@ TRemoteFile * TRemoteFile::Duplicate(bool Standalone) const
   std::unique_ptr<TRemoteFile> Result(std::make_unique<TRemoteFile>());
   try__catch
   {
-    if (FLinkedFile)
+    if (FLinkedFile && !FCyclicLink)
     {
       Result->FLinkedFile.reset(FLinkedFile->Duplicate(true));
       Result->FLinkedFile->FLinkedByFile = Result.get();

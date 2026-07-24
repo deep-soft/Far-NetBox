@@ -3695,6 +3695,22 @@ TStrings * TWinSCPFileSystem::CreateSelectedFileList(TOperationSide Side, TFarPa
   }
   return Result;
 }
+// SEH-safe wrapper for TRemoteFile::Duplicate().
+// MSVC forbids __try in functions with C++ objects requiring unwinding,
+// so this helper uses only raw pointers and POD types.
+// Returns a duplicated file on success, or nullptr on access violation (stale pointer).
+static TRemoteFile * DuplicateRemoteFileSafe(const TRemoteFile * RemoteFile)
+{
+  __try
+  {
+    return RemoteFile->Duplicate(true);
+  }
+  __except(EXCEPTION_EXECUTE_HANDLER)
+  {
+    return nullptr;
+  }
+}
+
 
 TStrings * TWinSCPFileSystem::CreateFileList(TObjectList * PanelItems,
   TOperationSide Side, bool SelectedOnly, const UnicodeString & ADirectory, bool FileNameOnly,
@@ -3745,7 +3761,12 @@ TStrings * TWinSCPFileSystem::CreateFileList(TObjectList * PanelItems,
               << " CreateFileList: duplicating remote file: " << fileNameUtf8.c_str();
           try
           {
-            Data = RemoteFile->Duplicate(true);
+            Data = DuplicateRemoteFileSafe(RemoteFile);
+            if (Data == nullptr)
+            {
+              TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
+                << " CreateFileList: access violation during Duplicate (stale pointer?), skipping file entry: " << fileNameUtf8.c_str();
+            }
           }
           catch (Exception & E)
           {
