@@ -1689,6 +1689,7 @@ void CFtpControlSocket::CheckForTimeout()
 
 void CFtpControlSocket::FtpCommand(LPCTSTR pCommand)
 {
+  m_bInResetOperation = false;  // Clear guard from previous ResetOperation
   m_Operation.nOpMode=CSMODE_COMMAND;
   Send(pCommand);
 }
@@ -4707,10 +4708,6 @@ void CFtpControlSocket::ResetOperation(int nSuccessful /*=FALSE*/)
   // handles all resource cleanup and reply posting.
   if (m_bInResetOperation)
     return;
-  // During List, ResetOperation can be triggered by transfer-socket destruction
-  // callbacks; blocking prevents state destruction under an active List.
-  if (m_bInList)
-    return;
   m_bInResetOperation = true;
 
 
@@ -4861,7 +4858,7 @@ void CFtpControlSocket::ResetOperation(int nSuccessful /*=FALSE*/)
   if (m_Operation.pData)
     delete m_Operation.pData;
   m_Operation.pData=0;
-  // m_bInResetOperation cleared by next operation entry, not here
+  m_bInResetOperation = false;
 }
 
 void CFtpControlSocket::Delete(CString filename, const CServerPath &path, bool filenameOnly)
