@@ -246,4 +246,3 @@ public:
   TNotifyEvent GetOnWin32Input() const { return FOnWin32Input; }
   void SetOnWin32Input(TNotifyEvent && Value) { FOnWin32Input = std::move(Value); }
 };
-
