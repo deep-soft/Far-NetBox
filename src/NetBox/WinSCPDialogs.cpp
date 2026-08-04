@@ -318,7 +318,7 @@ bool TWinSCPPlugin::ConfigurationDialog()
   std::unique_ptr<TWinSCPDialog> DialogPtr(std::make_unique<TWinSCPDialog>(this));
   TWinSCPDialog * Dialog = DialogPtr.get();
 
-  Dialog->SetSize(TPoint(67, 22));
+  Dialog->SetSize(TPoint(67, 26));
   Dialog->SetCaption(FORMAT("%s - %s",
     GetMsg(NB_PLUGIN_TITLE), ::StripHotkey(GetMsg(NB_CONFIG_INTERFACE))));
   Dialog->SetDialogGuid(&ConfigurationDialogGuid);
@@ -423,6 +423,14 @@ bool TWinSCPPlugin::ConfigurationDialog()
   Text->SetCaption(GetMsg(NB_CONFIG_PANEL_MODE_HINT2));
 
   Dialog->AddStandardButtons();
+  // Adjust button positions to bottom of dialog
+  const TRect CRect = Dialog->GetClientRect();
+  Dialog->ButtonSeparator->SetTop(CRect.Bottom - 1);
+  Dialog->OkButton->SetTop(CRect.Bottom);
+  Dialog->CancelButton->SetTop(CRect.Bottom);
+  Dialog->OkButton->SetCenterGroup(true);
+  Dialog->CancelButton->SetCenterGroup(true);
+  Dialog->OkButton->SetDefault(true);
 
   TFarConfiguration * FarConfiguration = GetFarConfiguration();
   DisksMenuCheck->SetChecked(FarConfiguration->GetDisksMenu());
@@ -681,6 +689,7 @@ bool TWinSCPPlugin::EnduranceConfigurationDialog()
   SessionReopenNumberOfRetriesEdit->SetFixed(true);
   SessionReopenNumberOfRetriesEdit->SetMask(L"999");
   SessionReopenNumberOfRetriesEdit->SetWidth(5);
+  SessionReopenNumberOfRetriesEdit->Move(1, 0);
 
   Text = MakeOwnedObject<TFarText>(Dialog);
   Text->SetCaption(GetMsg(NB_TRANSFER_SESSION_REOPEN_NUMBER_OF_RETRIES_LABEL2));
@@ -3245,7 +3254,7 @@ bool TWinSCPFileSystem::BannerDialog(const UnicodeString & SessionName,
   std::unique_ptr<TWinSCPDialog> DialogPtr(std::make_unique<TWinSCPDialog>(GetPlugin()));
   TWinSCPDialog * Dialog = DialogPtr.get();
 
-  Dialog->SetSize(TPoint(70, 21));
+  Dialog->SetSize(TPoint(70, 22));
   Dialog->SetCaption(FORMAT(GetMsg(NB_BANNER_TITLE), SessionName));
   Dialog->SetDialogGuid(&BannerDialogGuid);
 
@@ -3722,6 +3731,7 @@ TSessionDialog::TSessionDialog(TCustomFarPlugin * AFarPlugin, TSessionActionEnum
 
   TFarText * Text = MakeOwnedObject<TFarText>(this);
   Text->SetCaption(GetMsg(NB_LOGIN_TRANSFER_PROTOCOL));
+  Text->SetWidth(15);
 
   SetNextItemPosition(ipRight);
 
@@ -4170,7 +4180,7 @@ TSessionDialog::TSessionDialog(TCustomFarPlugin * AFarPlugin, TSessionActionEnum
   SFTPMaxPacketSizeEdit->SetMask(L"99999999");
   SFTPMaxPacketSizeEdit->SetWidth(8);
 
-  // FTP tab
+  // FTP(S) tab
 
   SetNextItemPosition(ipNewLine);
 
@@ -4221,7 +4231,7 @@ TSessionDialog::TSessionDialog(TCustomFarPlugin * AFarPlugin, TSessionActionEnum
 
   SetNextItemPosition(ipRight);
   TlsCertificateFileEdit = MakeOwnedObject<TFarEdit>(this);
-  TlsCertificateFileEdit->SetWidth(30);
+  TlsCertificateFileEdit->SetWidth(28);
 
   SetNextItemPosition(ipRight);
   TlsCertificateFileBrowseBtn = MakeOwnedObject<TFarButton>(this);
@@ -4241,7 +4251,6 @@ TSessionDialog::TSessionDialog(TCustomFarPlugin * AFarPlugin, TSessionActionEnum
     PostLoginCommandsEdits[Index3] = Edit;
   }
 
-  MakeOwnedObject<TFarSeparator>(this);
 
   // S3 tab
   SetNextItemPosition(ipNewLine);
@@ -7317,7 +7326,7 @@ TPropertiesDialog::TPropertiesDialog(TCustomFarPlugin * AFarPlugin,
 
     SetCaption(GetMsg(NB_PROPERTIES_CAPTION));
 
-    SetSize(TPoint(56, 19));
+    SetSize(TPoint(64, 19));
 
     const TRect CRect = GetClientRect();
 
@@ -7340,7 +7349,7 @@ TPropertiesDialog::TPropertiesDialog(TCustomFarPlugin * AFarPlugin,
     MsgText->SetRight(-6);
     MsgText->SetFlag(DIF_CENTERTEXT, true);
     const TRemoteFile * File = AFileList->GetAs<TRemoteFile>(0);
-    if (!File->GetLinkTo().IsEmpty())
+    if ((File != nullptr) && !File->GetLinkTo().IsEmpty())
     {
       SetHeight(GetHeight() + 1);
       Text = MakeOwnedObject<TFarText>(this);
@@ -7682,6 +7691,8 @@ protected:
   TFarCheckBox * CalculateSizeCheck{nullptr};
   TFarText * FileMaskText{nullptr};
   TFarEdit * FileMaskEdit{nullptr};
+  TFarCheckBox * UseTempDirCheck{nullptr};
+  TFarEdit * TempDirEdit{nullptr};
   TFarComboBox * SpeedCombo{nullptr};
 
   void ValidateMaskComboExit(TObject * Sender);
@@ -7921,6 +7932,25 @@ TCopyParamsContainer::TCopyParamsContainer(TFarDialog * ADialog,
 
   GetDialog()->SetNextItemPosition(ipNewLine);
 
+  UseTempDirCheck = MakeOwnedObject<TFarCheckBox>(GetDialog());
+  Add(UseTempDirCheck);
+  UseTempDirCheck->SetLeft(1);
+  UseTempDirCheck->SetCaption(GetMsg(NB_TRANSFER_USE_TEMP_DIR));
+
+  GetDialog()->SetNextItemPosition(ipNewLine);
+
+  Text = MakeOwnedObject<TFarText>(GetDialog());
+  Add(Text);
+  Text->SetLeft(1);
+  Text->SetCaption(GetMsg(NB_TRANSFER_TEMP_DIR));
+  Text->SetEnabledDependency(UseTempDirCheck);
+
+  TempDirEdit = MakeOwnedObject<TFarEdit>(GetDialog());
+  Add(TempDirEdit);
+  TempDirEdit->SetLeft(20);
+  TempDirEdit->SetWidth(TMWidth - 18);
+  TempDirEdit->SetEnabledDependency(UseTempDirCheck);
+
   Separator = MakeOwnedObject<TFarSeparator>(GetDialog());
   Separator->SetPosition(FileMaskEdit->GetBottom() + 1);
   Separator->SetLeft(0);
@@ -8015,6 +8045,9 @@ void TCopyParamsContainer::SetParams(const TCopyParamType & Value)
 
   SpeedCombo->SetText(SetSpeedLimit(Value.GetCPSLimit()));
 
+  UseTempDirCheck->SetChecked(!Value.GetTempPath().IsEmpty());
+  TempDirEdit->SetText(Value.GetTempPath().IsEmpty() ? SystemTemporaryDirectory() : Value.GetTempPath());
+
   FParams = Value;
 }
 
@@ -8074,6 +8107,15 @@ TCopyParamType TCopyParamsContainer::GetParams() const
 
   Result.GetIncludeFileMask().Masks(FileMaskEdit->GetText());
   Result.SetPreserveTime(PreserveTimeCheck->GetChecked());
+
+  if (UseTempDirCheck->GetChecked())
+  {
+    Result.SetTempPath(TempDirEdit->GetText());
+  }
+  else
+  {
+    Result.SetTempPath(UnicodeString());
+  }
   Result.SetCalculateSize(CalculateSizeCheck->GetChecked());
 
   Result.SetCPSLimit(GetSpeedLimit(SpeedCombo->GetText()));
@@ -8101,7 +8143,7 @@ void TCopyParamsContainer::ValidateSpeedComboExit(TObject * /*Sender*/)
 
 int32_t TCopyParamsContainer::GetHeight() const
 {
-  return 16;
+  return 18;
 }
 
 class TCopyDialog final : public TFarDialog
