@@ -3,10 +3,11 @@
 
 #include "WinSCPFileSystem.h"
 #include "WinSCPPlugin.h"
+#include <atomic>
 #include "FarConfiguration.h"
 #include "FarUtils.h"
-#include <Common.h>
 #include <MsgIDs.h>
+#include <Common.h>
 #include <TextsWin.h>
 #include <ObjIDs.h>
 #include <Exceptions.h>
@@ -100,6 +101,23 @@ void TRemoteFilePanelItem::GetData(
   uintptr_t & /*NumberOfLinks*/, UnicodeString & /*Description*/,
   UnicodeString &Owner, void *& UserData, size_t & CustomColumnNumber)
 {
+  // Defensive guard: FRemoteFile may be null if the directory was rebuilt
+  // (e.g. after shell command) but the panel was not yet refreshed via
+  // UpdatePanel(). Return safe defaults to prevent null-deref crash (issue #523).
+  if (FRemoteFile == nullptr)
+  {
+    TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
+      << "TRemoteFilePanelItem::GetData: FRemoteFile is null, returning stale defaults";
+    AFileName.Clear();
+    Size = 0;
+    FileAttributes = 0;
+    LastWriteTime = TDateTime();
+    LastAccess = TDateTime();
+    Owner.Clear();
+    UserData = nullptr;
+    CustomColumnNumber = 0;
+    return;
+  }
   AFileName = FRemoteFile->GetFileName();
   Size = FRemoteFile->GetSize();
   if (Size < 0)
@@ -120,6 +138,14 @@ void TRemoteFilePanelItem::GetData(
 
 UnicodeString TRemoteFilePanelItem::GetCustomColumnData(size_t Column)
 {
+  // Defensive guard: FRemoteFile may be null if directory was rebuilt but
+  // panel not yet refreshed (issue #523).
+  if (FRemoteFile == nullptr)
+  {
+    TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
+      << "TRemoteFilePanelItem::GetCustomColumnData: FRemoteFile is null, returning empty";
+    return UnicodeString();
+  }
   switch (Column)
   {
   case 0: return FRemoteFile->GetFileGroup().GetName();
@@ -525,9 +551,24 @@ bool TWinSCPFileSystem::GetFindDataEx(TObjectList * PanelItems, OPERATION_MODES 
     FNoProgress = FLAGSET(OpMode, OPM_FIND) || FLAGSET(OpMode, OPM_SILENT);
     try__finally
     {
-      if (FReloadDirectory && FTerminal->GetActive())
+      if (FReloadDirectory.load() && FTerminal->GetActive())
       {
         FReloadDirectory = false;
+        // Invalidate stale TRemoteFile pointers in Far's panel items before
+        // ReloadDirectory() frees old TRemoteFile objects (issue #318).
+        TFarPanelInfo ** PanelInfo = GetPanelInfo();
+        if (PanelInfo && *PanelInfo)
+        {
+          TObjectList * FarItems = (*PanelInfo)->GetItems();
+          for (int32_t I = 0; I < FarItems->GetCount(); ++I)
+          {
+            TRemoteFilePanelItem * Item = FarItems->GetAs<TRemoteFilePanelItem>(I);
+            if (Item)
+            {
+              Item->InvalidateFile();
+            }
+          }
+        }
         FTerminal->ReloadDirectory();
       }
 
@@ -826,6 +867,14 @@ bool TWinSCPFileSystem::ProcessPanelEventEx(intptr_t Event, void * Param)
       if (FInCancelDialog)
         return false;
 
+      // Show deferred exception from worker thread (FTP CMainThread timeout)
+      if (FDeferredExceptionPending)
+      {
+        ProcessDeferredException();
+        return false;
+      }
+
+
       if (FTerminal != nullptr)
       {
         const TFileOperationProgressType * MainProg = FTerminal->GetOperationProgress();
@@ -1004,10 +1053,13 @@ bool TWinSCPFileSystem::ExecuteCommand(const UnicodeString & Command)
         FTerminal->EndTransaction();
       if (FTerminal->GetActive())
       {
-        if (WinConfiguration && WinConfiguration->GetRefreshRemotePanel())
-        {
-          UpdatePanel();
-        }
+        // Always refresh the panel after a shell command — the command may have
+        // created/deleted/modified files, and stale panel entries cause null-deref
+        // crashes on F3/F4 (issue #523). RefreshRemotePanel controls periodic
+        // background refresh, not post-command refresh.
+        FTerminal->LogEvent(L"ExecuteCommand: forcing panel refresh after shell command");
+        UpdatePanel();
+        FTerminal->LogEvent(L"ExecuteCommand: panel refresh complete");
         RedrawPanel();
       }
       else
@@ -1182,6 +1234,11 @@ bool TWinSCPFileSystem::ProcessKeyEx(int32_t Key, uint32_t ControlState)
       MultipleEdit();
       Handled = true;
     }
+    if (Focused && (Key == VK_F4) && CheckControlMaskSet(ControlState, SHIFTMASK))
+    {
+      EditNewFile();
+      Handled = true;
+    }
 
     // Return to session panel
     if (Focused && !Handled && !IsConnectedDirectly() &&
@@ -1294,6 +1351,175 @@ void TWinSCPFileSystem::TemporarilyDownloadFiles(TStrings * AFileList, TCopyPara
   {
     FTerminal->SetExceptionOnFail(false);
   } end_try__finally
+}
+
+void TWinSCPFileSystem::EditNewFile()
+{
+  UnicodeString RemotePath = base::UnixIncludeTrailingBackslash(FTerminal->GetCurrentDirectory());
+  if (!GetWinSCPPlugin()->InputBox(
+        GetMsg(NB_EDIT_NEW_FILE_TITLE),
+        ::StripHotkey(GetMsg(NB_EDIT_NEW_FILE_PROMPT)),
+        RemotePath, 0, EDIT_NEW_FILE_HISTORY))
+  {
+    return;
+  }
+
+  if (RemotePath.IsEmpty())
+  {
+    return;
+  }
+
+  // Normalize path - resolve relative paths and .. segments
+  FTerminal->LogEvent(FORMAT("EditNewFile: input='%s', cwd='%s'", RemotePath.c_str(), FTerminal->GetCurrentDirectory().c_str()));
+  RemotePath = base::AbsolutePath(FTerminal->GetCurrentDirectory(), RemotePath);
+  FTerminal->LogEvent(FORMAT("EditNewFile: normalized='%s'", RemotePath.c_str()));
+
+  // Check if file exists remotely
+  // Bypass TryReadFile to capture the real exception (TryReadFile swallows all)
+  std::unique_ptr<TRemoteFile> RemoteFile;
+  FTerminal->SetExceptionOnFail(true);
+  try
+  {
+    RemoteFile.reset(FTerminal->ReadFile(RemotePath));
+  }
+  catch (Exception & E)
+  {
+    FTerminal->LogEvent(FORMAT("EditNewFile: ReadFile failed: %s", E.Message.c_str()));
+  }
+  FTerminal->SetExceptionOnFail(false);
+  // ReadFile returns a TRemoteFile with FDirectory=nullptr and FFullFileName empty.
+  // CopyToLocal → DoAllowRemoteFileTransfer accesses FullFileName which dereferences
+  // the null FDirectory. Populate FullFileName so GetFullFileName() returns it directly.
+  if (RemoteFile)
+  {
+    RemoteFile->SetFullFileName(RemotePath);
+  }
+  const bool FileExists = (RemoteFile != nullptr);
+
+  TGUICopyParamType CopyParam(GetGUIConfiguration()->GetDefaultCopyParam());
+  EditViewCopyParam(CopyParam);
+  FLastEditCopyParam = CopyParam;
+
+  if (FileExists)
+  {
+    // File exists remotely - download and edit
+    std::unique_ptr<TStrings> FileList(std::make_unique<TStringList>());
+    FileList->AddObject(RemotePath, RemoteFile.get());
+
+    // Mirror remote directory structure under temp root
+    UnicodeString RemoteDir = base::UnixExtractFilePath(RemotePath);
+    if (RemoteDir.Length() > 1)
+    {
+      RemoteDir = base::UnixExcludeTrailingBackslash(RemoteDir.SubString(2, RemoteDir.Length() - 1));
+      RemoteDir = base::FromUnixPath(RemoteDir);
+      RemoteDir = CopyParam.ValidLocalPath(RemoteDir);
+    }
+    else
+    {
+      RemoteDir.Clear();
+    }
+    UnicodeString TempDir = GetWinSCPPlugin()->GetTemporaryDir();
+    if (TempDir.IsEmpty() || !::ForceDirectories(ApiPath(TempDir)))
+    {
+      throw Exception(FMTLOAD(NB_CREATE_TEMP_DIR_ERROR, TempDir));
+    }
+    const UnicodeString MirrorDir = ::IncludeTrailingBackslash(TempDir) + RemoteDir;
+    if (!MirrorDir.IsEmpty() && !::ForceDirectories(ApiPath(MirrorDir)))
+    {
+      throw Exception(FMTLOAD(NB_CREATE_TEMP_DIR_ERROR, MirrorDir));
+    }
+    const UnicodeString ValidLocalFileName = CopyParam.ValidLocalFileName(
+      base::UnixExtractFileName(RemotePath));
+    const UnicodeString LocalFile = ::IncludeTrailingBackslash(MirrorDir) + ValidLocalFileName;
+    CopyParam.SetFileNameCase(ncNoChange);
+    CopyParam.SetPreserveReadOnly(false);
+    CopyParam.SetResumeSupport(rsOff);
+    try
+    {
+      FTerminal->CopyToLocal(FileList.get(), MirrorDir, &CopyParam, cpTemporary, nullptr);
+    }
+    catch (Exception & E)
+    {
+      FTerminal->LogEvent(FORMAT("EditNewFile: CopyToLocal failed: %s", E.Message.c_str()));
+      GetWinSCPPlugin()->ShowExtendedException(&E);
+      return;
+    }
+
+    // Capture remote timestamp
+    FLastEditFileTimestamp = RemoteFile->GetModification();
+    FLastEditCopyParam.SetPreserveTime(false);
+
+    FOriginalEditRemoteFile = RemotePath;
+    FOriginalEditFile = LocalFile;
+    FLastEditFile = LocalFile;
+    FLastEditorID = -1;
+
+    FTerminal->LogEvent(FORMAT("EditNewFile: downloaded to %s", LocalFile.c_str()));
+
+    // Open in editor
+    if (!GetWinSCPPlugin()->Editor(LocalFile, RemotePath,
+          EF_NONMODAL | EF_IMMEDIATERETURN | EF_DISABLEHISTORY))
+    {
+      FTerminal->LogEvent("EditNewFile: editor failed to open");
+      FOriginalEditRemoteFile.Clear();
+      FOriginalEditFile.Clear();
+      FLastEditFile.Clear();
+    }
+  }
+  else
+  {
+    // File does not exist remotely - create temp file and edit
+    UnicodeString TempDir = GetWinSCPPlugin()->GetTemporaryDir();
+    if (TempDir.IsEmpty())
+    {
+      throw Exception(FMTLOAD(NB_CREATE_TEMP_DIR_ERROR, TempDir));
+    }
+
+    // Mirror remote directory structure under temp root
+    // e.g. /tmp/q → {temp}\tmp\q, /var/log/app.log → {temp}\var\log\app.log
+    UnicodeString RemoteDir = base::UnixExtractFilePath(RemotePath);
+    if (RemoteDir.Length() > 1)
+    {
+      RemoteDir = base::UnixExcludeTrailingBackslash(RemoteDir.SubString(2, RemoteDir.Length() - 1));
+      RemoteDir = base::FromUnixPath(RemoteDir);
+      RemoteDir = CopyParam.ValidLocalPath(RemoteDir);
+    }
+    else
+    {
+      RemoteDir.Clear();
+    }
+    UnicodeString MirrorDir = ::IncludeTrailingBackslash(TempDir) + RemoteDir;
+    if (!::ForceDirectories(ApiPath(MirrorDir)))
+    {
+      throw Exception(FMTLOAD(NB_CREATE_TEMP_DIR_ERROR, MirrorDir));
+    }
+    const UnicodeString ValidLocalFileName = CopyParam.ValidLocalFileName(
+      base::UnixExtractFileName(RemotePath));
+    const UnicodeString LocalFile = ::IncludeTrailingBackslash(MirrorDir) + ValidLocalFileName;
+
+    // Create empty temp file
+    {
+      std::unique_ptr<TStream> Stream(std::make_unique<TFileStream>(LocalFile, fmCreate));
+    }
+
+    FOriginalEditRemoteFile = RemotePath;
+    FOriginalEditFile = LocalFile;
+    FLastEditFile = LocalFile;
+    FLastEditorID = -1;
+
+    FTerminal->LogEvent(FORMAT("EditNewFile: created temp file %s for new remote file %s",
+      LocalFile.c_str(), RemotePath.c_str()));
+
+    // Open in editor
+    if (!GetWinSCPPlugin()->Editor(LocalFile, RemotePath,
+          EF_NONMODAL | EF_IMMEDIATERETURN | EF_DISABLEHISTORY))
+    {
+      FTerminal->LogEvent("EditNewFile: editor failed to open");
+      FOriginalEditRemoteFile.Clear();
+      FOriginalEditFile.Clear();
+      FLastEditFile.Clear();
+    }
+  }
 }
 
 void TWinSCPFileSystem::ApplyCommand()
@@ -2069,6 +2295,12 @@ void TWinSCPFileSystem::RenameFile()
     RequireCapability(fcRename);
 
     TRemoteFile * File = static_cast<TRemoteFile *>(Focused->GetUserData());
+    if (File == nullptr)
+    {
+      TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
+        << "RenameFile: stale panel entry (UserData null), skipping rename";
+      return;
+    }
     UnicodeString NewName = File->GetFileName();
     if (RenameFileDialog(File, NewName))
     try__finally
@@ -2311,6 +2543,7 @@ void TWinSCPFileSystem::ClearConnectedState()
   FLastPath.Clear();
   FEditHistories.clear();
   FMultipleEdits.clear();
+  FOriginalEditRemoteFile.Clear();
   FOriginalEditFile.Clear();
   FLastEditFile.Clear();
   FLastMultipleEditFile.Clear();
@@ -2553,12 +2786,16 @@ bool TWinSCPFileSystem::SetDirectoryEx(const UnicodeString & ADir, OPERATION_MOD
         }
         else if ((ADir == PARENTDIRECTORY) && (FTerminal->GetCurrentDirectory() == ROOTDIRECTORY))
         {
-          // ClosePanel();
-          Disconnect();
+          if (MoreMessageDialog(GetMsg(NB_CONFIRM_DISCONNECT_FROM_ROOT), nullptr, qtConfirmation, qaYes | qaNo) == qaYes)
+          {
+            Disconnect();
+          }
         }
         else
         {
+          FTerminal->LogEvent(FORMAT(L"SetDirectoryEx: changing to \"%s\"", ADir));
           FTerminal->ChangeDirectory(ADir);
+          FTerminal->LogEvent(FORMAT(L"SetDirectoryEx: now in \"%s\"", FTerminal->GetCurrentDirectory()));
           FCurrentDirectoryWasChanged = true;
         }
       }
@@ -3019,6 +3256,7 @@ int32_t TWinSCPFileSystem::GetFilesRemote(TObjectList * PanelItems, bool Move,
   {
     if ((FFileList->GetCount() == 1) && (OpMode & OPM_EDIT))
     {
+      FOriginalEditRemoteFile = FFileList->GetString(0);
       FOriginalEditFile = ::IncludeTrailingBackslash(DestPath) +
         base::UnixExtractFileName(FFileList->GetString(0));
       FLastEditFile = FOriginalEditFile;
@@ -3027,6 +3265,7 @@ int32_t TWinSCPFileSystem::GetFilesRemote(TObjectList * PanelItems, bool Move,
     }
     else
     {
+      FOriginalEditRemoteFile.Clear();
       FOriginalEditFile.Clear();
       FLastEditFile.Clear();
       FLastEditorID = -1;
@@ -3456,6 +3695,22 @@ TStrings * TWinSCPFileSystem::CreateSelectedFileList(TOperationSide Side, TFarPa
   }
   return Result;
 }
+// SEH-safe wrapper for TRemoteFile::Duplicate().
+// MSVC forbids __try in functions with C++ objects requiring unwinding,
+// so this helper uses only raw pointers and POD types.
+// Returns a duplicated file on success, or nullptr on access violation (stale pointer).
+static TRemoteFile * DuplicateRemoteFileSafe(const TRemoteFile * RemoteFile)
+{
+  __try
+  {
+    return RemoteFile->Duplicate(true);
+  }
+  __except(EXCEPTION_EXECUTE_HANDLER)
+  {
+    return nullptr;
+  }
+}
+
 
 TStrings * TWinSCPFileSystem::CreateFileList(TObjectList * PanelItems,
   TOperationSide Side, bool SelectedOnly, const UnicodeString & ADirectory, bool FileNameOnly,
@@ -3504,7 +3759,21 @@ TStrings * TWinSCPFileSystem::CreateFileList(TObjectList * PanelItems,
           UTF8String fileNameUtf8(FileName);
           TINYLOG_TRACE(g_tinylog) << TLogContext::Format()
               << " CreateFileList: duplicating remote file: " << fileNameUtf8.c_str();
-          Data = RemoteFile->Duplicate(true);
+          try
+          {
+            Data = DuplicateRemoteFileSafe(RemoteFile);
+            if (Data == nullptr)
+            {
+              TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
+                << " CreateFileList: access violation during Duplicate (stale pointer?), skipping file entry: " << fileNameUtf8.c_str();
+            }
+          }
+          catch (Exception & E)
+          {
+            TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
+              << " CreateFileList: exception during Duplicate, skipping stale file entry: " << fileNameUtf8.c_str();
+            Data = nullptr;
+          }
         }
         else
         {
@@ -3756,7 +4025,31 @@ void TWinSCPFileSystem::Disconnect()
   DebugAssert(!FFileList);
   DebugAssert(!FPanelItems);
   if (FQueue)
-    FQueue->Close();
+  {
+    // Mirror the keepalive thread pattern: bounded wait with message pump.
+    // FQueue->Close() calls TSimpleThread::Close() which waits INFINITE
+    // if the queue thread is stuck on network I/O, Far hangs on exit.
+    FQueue->SignalStop();
+    for (int32_t Retry = 0; Retry < 30; ++Retry)
+    {
+      FQueue->WaitFor(100);
+      if (FQueue->IsFinished())
+        break;
+      MSG Msg;
+      while (::PeekMessage(&Msg, nullptr, 0, 0, PM_REMOVE))
+      {
+        ::TranslateMessage(&Msg);
+        ::DispatchMessage(&Msg);
+      }
+    }
+    if (!FQueue->IsFinished())
+    {
+      TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
+          << " Queue thread did not terminate, leaking to prevent crash";
+      // Leak the queue to avoid use-after-unload; OS reclaims on exit.
+      FQueue = nullptr;
+    }
+  }
   SAFE_DESTROY(FQueue);
   SAFE_DESTROY(FQueueStatus);
   if (FTerminal != nullptr)
@@ -3820,13 +4113,13 @@ void TWinSCPFileSystem::LogAuthentication(
 void TWinSCPFileSystem::TerminalInformation(
   TTerminal * Terminal, const UnicodeString & AStr, int32_t Phase, const UnicodeString & /*Additional*/)
 {
-  if (::GetCurrentThreadId() != FMainThreadId)
+  if (::GetCurrentThreadId() != FMainThreadId.load())
   {
     DEBUG_PRINTFA("::GetCurrentThreadId() != FMainThreadId");
     TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
         << "TerminalInformation skipped: worker thread "
         << std::to_string(::GetCurrentThreadId()) << " != main "
-        << std::to_string(FMainThreadId);
+        << std::to_string(FMainThreadId.load());
     return;
   }
 
@@ -3906,13 +4199,13 @@ void TWinSCPFileSystem::TerminalStartReadDirectory(TObject * /*Sender*/)
 void TWinSCPFileSystem::TerminalReadDirectoryProgress(
   TObject * /*Sender*/, int32_t Progress, int32_t /*ResolvedLinks*/, bool & Cancel)
 {
-  if (::GetCurrentThreadId() != FMainThreadId)
+  if (::GetCurrentThreadId() != FMainThreadId.load())
   {
     DEBUG_PRINTFA("::GetCurrentThreadId() != FMainThreadId");
     TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
         << "TerminalReadDirectoryProgress skipped: worker thread "
         << std::to_string(::GetCurrentThreadId()) << " != main "
-        << std::to_string(FMainThreadId);
+        << std::to_string(FMainThreadId.load());
     return;
   }
 
@@ -4126,20 +4419,66 @@ void TWinSCPFileSystem::TerminalDisplayBanner(
 }
 
 void TWinSCPFileSystem::TerminalShowExtendedException(
-  TTerminal * /*Terminal*/, Exception * E, void * /*Arg*/)
+  TTerminal * Terminal, Exception * E, void * /*Arg*/)
 {
-  GetWinSCPPlugin()->ShowExtendedException(E);
+  if (::GetCurrentThreadId() == FMainThreadId.load())
+  {
+    // Main thread — show dialog directly (normal path for SFTP/SCP)
+    GetWinSCPPlugin()->ShowExtendedException(E);
+  }
+  else
+  {
+    // Worker thread (FTP CMainThread) — defer to main thread
+    DeferExceptionToMainThread(Terminal, E);
+  }
+}
+
+void TWinSCPFileSystem::DeferExceptionToMainThread(
+  TTerminal * Terminal, Exception * E)
+{
+  const TGuard Guard(FDeferredExceptionSection);
+  if (!FDeferredExceptionPending)
+  {
+    FDeferredExceptionPending = true;
+    FDeferredExceptionMessage = E->Message;
+    FDeferredExceptionTerminal = Terminal;
+    // Marshal to main thread — FE_IDLE handler will show the dialog
+    GetPlugin()->PostMainThreadSynchro(nullptr);
+  }
+  // If already pending, discard — only one error dialog at a time
+}
+
+void TWinSCPFileSystem::ProcessDeferredException()
+{
+  UnicodeString Message;
+  TTerminal * Terminal = nullptr;
+  {
+    const TGuard Guard(FDeferredExceptionSection);
+    if (FDeferredExceptionPending)
+    {
+      FDeferredExceptionPending = false;
+      Message = std::move(FDeferredExceptionMessage);
+      Terminal = FDeferredExceptionTerminal;
+      FDeferredExceptionTerminal = nullptr;
+    }
+  } // Guard destructor releases lock before showing dialog
+
+  if (!Message.IsEmpty())
+  {
+    Exception E(Message);
+    GetWinSCPPlugin()->ShowExtendedException(&E);
+  }
 }
 
 void TWinSCPFileSystem::OperationProgress(
   TFileOperationProgressType & ProgressData)
 {
-  if (::GetCurrentThreadId() != FMainThreadId)
+  if (::GetCurrentThreadId() != FMainThreadId.load())
   {
     TINYLOG_WARNING(g_tinylog) << TLogContext::Format()
         << "OperationProgress skipped: worker thread "
         << std::to_string(::GetCurrentThreadId()) << " != main "
-        << std::to_string(FMainThreadId);
+        << std::to_string(FMainThreadId.load());
     return;
   }
 
@@ -4371,9 +4710,9 @@ TTerminalQueueStatus * TWinSCPFileSystem::ProcessQueue(bool Hidden)
   DebugAssert(QueueStatus != nullptr);
   FarPlugin->UpdateProgress(QueueStatus->GetCount() > 0 ? TBPS_INDETERMINATE : TBPS_NOPROGRESS, 0);
 
-  if (FQueueStatusInvalidated || FQueueItemInvalidated)
+  if (FQueueStatusInvalidated.load() || FQueueItemInvalidated.load())
   {
-    if (FQueueStatusInvalidated)
+    if (FQueueStatusInvalidated.load())
     {
       const TGuard Guard(FQueueStatusSection);
 
@@ -4403,7 +4742,7 @@ TTerminalQueueStatus * TWinSCPFileSystem::ProcessQueue(bool Hidden)
     }
   }
 
-  if (FRefreshRemoteDirectory)
+  if (FRefreshRemoteDirectory.load())
   {
     if ((GetTerminal() != nullptr) && GetTerminal()->GetActive())
     {
@@ -4415,7 +4754,7 @@ TTerminalQueueStatus * TWinSCPFileSystem::ProcessQueue(bool Hidden)
     }
     FRefreshRemoteDirectory = false;
   }
-  if (FRefreshLocalDirectory)
+  if (FRefreshLocalDirectory.load())
   {
     if (GetOppositeFileSystem() == nullptr)
     {
@@ -4427,7 +4766,7 @@ TTerminalQueueStatus * TWinSCPFileSystem::ProcessQueue(bool Hidden)
     FRefreshLocalDirectory = false;
   }
 
-  if (FQueueEventPending)
+  if (FQueueEventPending.load())
   {
     TQueueEventType Event;
 
@@ -4634,7 +4973,7 @@ void TWinSCPFileSystem::UploadFromEditor(bool NoReload,
         {
           FTerminal->LogEvent(FORMAT("DEBUG: Remote file was modified externally - showing confirmation dialog"));
           uint32_t Flags = FMSG_WARNING | FMSG_MB_OKCANCEL;
-          UnicodeString MessageText = GetMsg(EDIT_CHANGED_EXTERNALLY);
+          UnicodeString MessageText = GetMsg(NB_EDIT_CHANGED_EXTERNALLY);
           int32_t Result = GetWinSCPPlugin()->Message(Flags, L"", MessageText);
           if (Result == -1)
           {
@@ -4691,6 +5030,39 @@ void TWinSCPFileSystem::UploadFromEditor(bool NoReload,
     FTerminal->SetAutoReadDirectory(PrevAutoReadDirectory);
     FFileList.reset();
   } end_try__finally
+  // Update stored timestamp to match the newly uploaded remote file.
+  // This prevents false-positive EDIT_CHANGED_EXTERNALLY on subsequent saves
+  // because PreserveTime is disabled and the remote gets a fresh server timestamp.
+  try
+  {
+    UnicodeString RemoteFilePath = base::UnixCombinePaths(DestPath, RealFileName);
+    std::unique_ptr<TRemoteFile> RemoteFile(FTerminal->TryReadFile(RemoteFilePath));
+    if (RemoteFile != nullptr)
+    {
+      FLastEditFileTimestamp = RemoteFile->GetModification();
+      FTerminal->LogEvent(FORMAT("DEBUG: Updated FLastEditFileTimestamp after upload: %s",
+        nb::DateTimeToStr(FLastEditFileTimestamp).c_str()));
+      // Also update multiple-edit source timestamp if applicable
+      if (FLastEditorID >= 0)
+      {
+        auto it = FMultipleEdits.find(FLastEditorID);
+        if (it != FMultipleEdits.end())
+        {
+          it->second.SourceTimestamp = FLastEditFileTimestamp;
+        }
+      }
+    }
+    else
+    {
+      FLastEditFileTimestamp = TDateTime();
+      FTerminal->LogEvent(FORMAT("DEBUG: Could not re-read remote file after upload - timestamp cleared"));
+    }
+  }
+  catch (Exception & E)
+  {
+    FLastEditFileTimestamp = TDateTime();
+    FTerminal->LogEvent(FORMAT("DEBUG: Failed to update timestamp after upload: %s - cleared", E.Message.c_str()));
+  }
 }
 
 void TWinSCPFileSystem::UploadOnSave(bool NoReload)
@@ -4714,11 +5086,14 @@ void TWinSCPFileSystem::UploadOnSave(bool NoReload)
       if (NativeEdit)
       {
         DebugAssert(FLastEditFile == Info->GetFileName());
-        // always upload under the most recent name
-        UnicodeString CurrentDirectory = FTerminal->GetCurrentDirectory();
-        // Extract remote file name from the original edit file path (local temp filename includes remote name)
-        UnicodeString RemoteFileName = base::ExtractFileName(FOriginalEditFile, false);
-        UploadFromEditor(NoReload, FLastEditFile, RemoteFileName, CurrentDirectory);
+        const UnicodeString CurrentDirectory = FTerminal->GetCurrentDirectory();
+        const UnicodeString RemoteFileName = base::UnixExtractFileName(FOriginalEditRemoteFile);
+        UnicodeString RemoteDirectory = base::UnixExtractFilePath(FOriginalEditRemoteFile);
+        if (RemoteDirectory.IsEmpty())
+        {
+          RemoteDirectory = CurrentDirectory;
+        }
+        UploadFromEditor(NoReload, FLastEditFile, RemoteFileName, RemoteDirectory);
         FTerminal->SetCurrentDirectory(CurrentDirectory);
       }
 
@@ -4734,6 +5109,12 @@ void TWinSCPFileSystem::UploadOnSave(bool NoReload)
 
 void TWinSCPFileSystem::ProcessEditorEvent(intptr_t Event, void * /* Param */)
 {
+  if (FProcessingEditorEvent)
+  {
+    AppLogFmt(L"ProcessEditorEvent: Reentrant call skipped (Event=%d)", static_cast<intptr_t>(Event));
+    return;
+  }
+  FProcessingEditorEvent = true;
   // EE_REDRAW is the first for optimization
   if (Event == EE_REDRAW)
   {
@@ -4894,6 +5275,7 @@ void TWinSCPFileSystem::ProcessEditorEvent(intptr_t Event, void * /* Param */)
       }
     }
   }
+  FProcessingEditorEvent = false;
 }
 
 void TWinSCPFileSystem::EditViewCopyParam(TCopyParamType & CopyParam)
@@ -5132,4 +5514,3 @@ UnicodeString TWinSCPFileSystem::GetFileNameHash(const UnicodeString & AFileName
     nb::ToUInt8Ptr(Buf));
   return BytesToHex(Result);
 }
-
