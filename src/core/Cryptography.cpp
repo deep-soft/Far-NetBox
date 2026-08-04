@@ -962,4 +962,3 @@ int32_t TEncryption::GetOverhead()
 {
   return RawByteString(AesCtrMagic).Length() + SALT_LENGTH(PASSWORD_MANAGER_AES_MODE);
 }
-
