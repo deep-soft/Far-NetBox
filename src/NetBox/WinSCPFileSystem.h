@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <Interface.h>
 #include "FarPlugin.h"
 #include <FileOperationProgress.h>
@@ -35,6 +36,7 @@ constexpr const char * LOCAL_SYNC_HISTORY = "WinscpLocalSync";
 constexpr const char * MOVE_TO_HISTORY = "WinscpMoveTo";
 constexpr const char * WINSCP_FILE_MASK_HISTORY = "WinscpFileMask";
 constexpr const char * MAKE_SESSION_FOLDER_HISTORY = "WinscpSessionFolder";
+constexpr const char * EDIT_NEW_FILE_HISTORY = "WinscpEditNewFile";
 
 #if defined(__BORLANDC__)
 // for Properties dialog
@@ -261,6 +263,8 @@ private:
     int32_t Options, uint32_t & AParams);
   void TerminalShowExtendedException(TTerminal * Terminal,
     Exception * E, void * Arg);
+  void DeferExceptionToMainThread(TTerminal * Terminal, Exception * E);
+  void ProcessDeferredException();
   void TerminalDeleteLocalFile(const UnicodeString & AFileName, bool Alternative, int32_t & Deleted);
   HANDLE TerminalCreateLocalFile(const UnicodeString & ALocalFileName,
     DWORD DesiredAccess, DWORD ShareMode, DWORD CreationDisposition, DWORD FlagsAndAttributes);
@@ -311,6 +315,7 @@ private:
   UnicodeString GetFileNameHash(const UnicodeString & AFileName) const;
   int32_t GetFilesRemote(TObjectList * PanelItems, bool Move,
     UnicodeString & DestPath, OPERATION_MODES OpMode);
+  void EditNewFile();
 
 private:
   TTerminalQueue * GetQueue();
@@ -333,6 +338,7 @@ private:
   gsl::owner<TList *> FPanelItems{nullptr};
   UnicodeString FSavedFindFolder;
   UnicodeString FOriginalEditFile;
+  UnicodeString FOriginalEditRemoteFile;
   UnicodeString FLastEditFile;
   UnicodeString FLastMultipleEditFile;
   UnicodeString FLastMultipleEditFileTitle;
@@ -357,23 +363,30 @@ private:
   UnicodeString FNewSessionsFolder;
   UnicodeString FPrevSessionName;
   UnicodeString FFocusFileName;
-  bool FQueueStatusInvalidated{false};
-  bool FQueueItemInvalidated{false};
-  bool FRefreshLocalDirectory{false};
-  bool FRefreshRemoteDirectory{false};
-  bool FQueueEventPending{false};
-  bool FReloadDirectory{false};
+  std::atomic<bool> FQueueStatusInvalidated{false};
+  std::atomic<bool> FQueueItemInvalidated{false};
+  std::atomic<bool> FRefreshLocalDirectory{false};
+  std::atomic<bool> FRefreshRemoteDirectory{false};
+  std::atomic<bool> FQueueEventPending{false};
+  std::atomic<bool> FReloadDirectory{false};
   bool FLastMultipleEditReadOnly{false};
   bool FNoProgress{false};
   bool FSynchronizationCompare{false};
   bool FEditorPendingSave{false};
+  bool FProcessingEditorEvent{false};
   bool FNoProgressFinish{false};
   bool FSynchronisingBrowse{false};
   bool FOutputLog{false};
   bool FLoadingSessionList{false};
   bool FCurrentDirectoryWasChanged{false};
   bool FUpdatingPanelParam{false};
-  DWORD FMainThreadId{0};
+  std::atomic<DWORD> FMainThreadId{0};
+  // Deferred exception from worker thread (FTP CMainThread timeout)
+  TCriticalSection FDeferredExceptionSection;
+  std::atomic<bool> FDeferredExceptionPending{false};
+  UnicodeString FDeferredExceptionMessage;
+  TTerminal * FDeferredExceptionTerminal{nullptr};
+
 };
 
 class TSessionPanelItem final : public TCustomFarPanelItem
@@ -417,6 +430,7 @@ class TRemoteFilePanelItem final : public TCustomFarPanelItem
   NB_DISABLE_COPY(TRemoteFilePanelItem)
 public:
   explicit TRemoteFilePanelItem(TRemoteFile * ARemoteFile);
+  void InvalidateFile() { FRemoteFile = nullptr; }
   static void SetPanelModes(TFarPanelModes * PanelModes);
   static void SetKeyBarTitles(TFarKeyBarTitles * KeyBarTitles);
 

@@ -153,6 +153,9 @@ TWinSCPPlugin::~TWinSCPPlugin() noexcept
   }
   if (g_tinylog)
   {
+    // Signal all threads to stop logging before destroying tinylog.
+    // ProcessPanelEventW may still fire after this point during Far teardown.
+    tinylog::TinyLog::SetShuttingDown();
     g_tinylog->Close();
     tinylog::TinyLog::DestroyInstance();
   }
@@ -1177,7 +1180,7 @@ void TWinSCPPlugin::MasterPasswordPrompt()
     UnicodeString Password;
     const bool Ok = FarPlugin->InputBox(
       FarPlugin->GetMsg(NB_MASTER_PASSWORD_CAPTION),
-      FarPlugin->GetMsg(NB_MASTER_PASSWORD_CURRENT),
+      ::StripHotkey(FarPlugin->GetMsg(NB_MASTER_PASSWORD_CURRENT)),
       Password,
       FIB_PASSWORD | FIB_NOUSELASTHISTORY,
       L"",

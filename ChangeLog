@@ -1,23 +1,83 @@
-# for this file format description,
-# see https://github.com/olivierlacan/keep-a-changelog
+## [26.7.3.617] - 2026-07-24
 
-## [26.05.3.612] - 2026-05-26
+ * Fix FTP session hang at "Starting the session..."
+https://github.com/michaellukashov/Far-NetBox/issues/529
+ * Fix SCP crash
+https://github.com/michaellukashov/Far-NetBox/issues/530
+## [26.7.3.616] - 2026-07-24
+
+## [26.7.3.616] - 2026-07-24
+
+### Added
+
+ * Add temporary download directory option and serialization to transfer settings
+https://github.com/michaellukashov/Far-NetBox/issues/525
+ * Add FTP NOOP heartbeat interval option to prevent connection timeout
+ * Add confirmation prompt before disconnecting when navigating up from root remote directory
 
 ### Fixes
 
+ * Fix SCP remote file save path resolution — when creating a new remote file via Shift-F4 with an absolute path, the file was incorrectly
+saved to a relative path instead of preserving the specified absolute path
+https://forum.farmanager.com/viewtopic.php?p=181723#p181723
+ * Fix dialog layout and sizing for WinSCP session configuration — WinSCP session dialog adjustments
+https://forum.farmanager.com/viewtopic.php?p=182981#p182981
+ * Fix FAR crash when using netBox FTP/SFTP https://bugs.farmanager.com/view.php?id=4104
+0004104: FAR crashes when I use netBox FTP/SFTP
+ * Fix atomic shutdown flag and reentrancy guard for tinylog teardown (issue #313)
+ * Fix Esc hang and cancellation failures in SCP transfers — prevent deadlock on Close with message pumping (#511)
+ * Fix crash when SFTP chmod 444 fails on remote directories — guard TryToOpen with exception handling (#393)
+ * Fix crash on second file open without directory refresh — duplicate remote file pointers (#508)
+ * Fix Progress ETA calculation to use original file size instead of transferred size (issue #14)
+ * Fix thread-safety issues in NetBox panel operations — prevent deadlocks during concurrent access
+ * Fix FileZilla re-entrant List and ResetOperation calls that could corrupt FTP directory state
+ * Fix terminal robustness — improved error handling and reconnect logic
+ * Fix DLL module pinning to prevent crash on unload during Far Manager shutdown
+ * Fix dialog width for multi-line button layout — correct off-by-one in bounds calculation
+ * Fix banner suppression — handle dynamic content changes reliably
+ * Fix SCP, S3, WebDAV to enable missing protocol capabilities
+ * Fix SFTP general error handling and robustness improvements
+
+### Dependencies
+
+ * Update PuTTY library to 0.84
+
+
+## [26.7.2.615] - 2026-07-13
+
+### Fixes
+
+ * Fix reentrancy guard on `ProcessEditorEvent` to prevent stack overflow from recursive calls https://github.com/michaellukashov/Far-NetBox/commit/5ee0e526d
+ * Fix false-positive "remote file has been changed" warning when saving an edited remote file a second time (F2) — update stored timestamp after each upload to prevent stale-timestamp mismatch
+ 
+## [26.7.1.614] - 2026-07-12
+
+### Fixes
+
+ * Fix link with ulink after v2.6.5.3.612 — replace extern `Wrapper_*` fallback declarations with local `sim_*` SRW lock / condition-variable helpers in `vc_crt_fix_ulink.cpp`, and correct the delay-load failure hook to use `dliFailGetProc` https://github.com/michaellukashov/Far-NetBox/pull/519
+ * Fix panel not auto-refreshing after shell command and null-deref crash on stale panel item pointers https://github.com/michaellukashov/Far-NetBox/issues/523
+ * Polish translation updates: fix accelerator keys (Protocol, SFTP), update session start text, fix Edit history shortcut, capitalize NULL in SSH keepalive, translate remaining English strings in certificate/S3/TLS sections https://github.com/michaellukashov/Far-NetBox/pull/526
+
+
+## [26.5.3.613] - 2026-05-29
+
+### Fixes
+
+ * Fix 7z release artifact packaging: use shell glob "${PLUGIN_DIR}/*" instead of directory "${PLUGIN_DIR}/" to prevent extra Plugins directory nesting in archives https://github.com/michaellukashov/Far-NetBox/commit/947891387
  * Restore Windows XP compatibility by adding CRT fixes and updating target to Windows XP SP2/Server 2003 https://github.com/michaellukashov/Far-NetBox/pull/500
  * Complete symlink cycle detection for SFTP directory size calculation (F3) — track resolved real directory path to properly detect cycles like `self -> .` https://github.com/michaellukashov/Far-NetBox/issues/497
+ * Fix SonarCloud reliability issues: guard memmove in FromBackend against null Pending; fix signed/unsigned comparison in HMAC_IN_DATA (int32_t→uint32_t); add null-check for FTerminal before dereference in SetDirectoryEx; add nullptr guard for AOperationProgress before SetSkipToAll in FileOperationLoopQuery; mark TSecureShell::FatalError as NORETURN (S3807); fix session dialog layout — place POSIX rename checkbox on its own line and SFTP RealPath label below max version https://github.com/michaellukashov/Far-NetBox/pull/521
  * Normalize path separators in panel items for Windows compatibility — remote file paths with forward slashes prevented opening files from Far Manager search results (Alt+F7) https://github.com/michaellukashov/Far-NetBox/issues/250
 
 
-## [26.05.2.611] - 2026-05-22
+## [26.5.2.611] - 2026-05-22
 
 ### Fixes
 
  * Fix plugin hang when navigating to parent directory with Enter on ".." https://github.com/michaellukashov/Far-NetBox/issues/518
 
 
-## [26.05.1.610] - 2026-05-17
+## [26.5.1.610] - 2026-05-17
 
 ### Fixes
 

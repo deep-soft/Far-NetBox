@@ -563,7 +563,7 @@ bool TSCPFileSystem::IsCapable(int32_t Capability) const
     case fcTransferOut:
     case fcTransferIn:
     case fcTags:
-      return false;
+      return true;
 
     case fcChangePassword:
       return FSecureShell->CanChangePassword();
@@ -1339,6 +1339,10 @@ void TSCPFileSystem::CustomReadFile(const UnicodeString & AFileName,
     }
 
     File = CreateRemoteFile(FOutput->GetString(LineIndex), ALinkedByFile);
+  }
+  if (File == nullptr)
+  {
+    throw Exception(FMTLOAD(FILE_NOT_EXISTS, AFileName));
   }
 }
 

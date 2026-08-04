@@ -329,7 +329,9 @@ void CFtpControlSocket::SetDirectoryListing(t_directory *pDirectory, bool bSetWo
   m_pDirectoryListing=new t_directory;
   *m_pDirectoryListing=*pDirectory;
 
-  if (bSetWorkingDir)
+  // Skip SetWorkingDir during ResetOperation cleanup — the directory refresh
+  // messages it posts can trigger re-entry into List via message processing.
+  if (bSetWorkingDir && !m_bInResetOperation)
     m_pOwner->SetWorkingDir(pDirectory);
 }
 
@@ -1687,6 +1689,7 @@ void CFtpControlSocket::CheckForTimeout()
 
 void CFtpControlSocket::FtpCommand(LPCTSTR pCommand)
 {
+  m_bInResetOperation = false;  // Clear guard from previous ResetOperation
   m_Operation.nOpMode=CSMODE_COMMAND;
   Send(pCommand);
 }
@@ -1749,6 +1752,16 @@ void CFtpControlSocket::List(BOOL bFinish, int nError /*=FALSE*/, CServerPath pa
 {
   USES_CONVERSION;
 
+  // Prevent re-entrant List calls while already on the stack.
+  if (m_bInList)
+    return;
+
+  // RAII guard: clears m_bInList on all exit paths (returns, exceptions).
+  struct ListGuard {
+    bool& active;
+    ListGuard(bool& a) : active(a) { active = true; }
+    ~ListGuard() { active = false; }
+  } guard(m_bInList);
   #define LIST_INIT  -1
   #define LIST_PWD  0
   #define LIST_CWD  1
@@ -1764,6 +1777,7 @@ void CFtpControlSocket::List(BOOL bFinish, int nError /*=FALSE*/, CServerPath pa
 
   DebugAssert(!m_Operation.nOpMode || m_Operation.nOpMode&CSMODE_LIST);
 
+  m_bInResetOperation = false;  // Clear guard from previous ResetOperation
   m_Operation.nOpMode|=CSMODE_LIST;
 
   if (!m_pOwner->IsConnected())
@@ -2893,6 +2907,7 @@ void CFtpControlSocket::FileTransfer(t_transferfile * transferfile/*=0*/, BOOL b
   DebugAssert(!m_Operation.nOpMode || m_Operation.nOpMode&CSMODE_TRANSFER);
   if (!m_pOwner->IsConnected())
   {
+    m_bInResetOperation = false;  // Clear guard from previous ResetOperation
     m_Operation.nOpMode=CSMODE_TRANSFER|(transferfile->get?CSMODE_DOWNLOAD:CSMODE_UPLOAD);
     ResetOperation(FZ_REPLY_ERROR|FZ_REPLY_DISCONNECTED);
     return;
@@ -3030,6 +3045,7 @@ void CFtpControlSocket::FileTransfer(t_transferfile * transferfile/*=0*/, BOOL b
       ShowStatus(str,FZ_LOG_STATUS);
     }
 
+    m_bInResetOperation = false;  // Clear guard from previous ResetOperation
     m_Operation.nOpMode=CSMODE_TRANSFER|(transferfile->get?CSMODE_DOWNLOAD:CSMODE_UPLOAD);
 
     m_Operation.pData=new CFileTransferData;
@@ -4688,6 +4704,13 @@ void CFtpControlSocket::ResetOperation(int nSuccessful /*=FALSE*/)
   if (nSuccessful & FZ_REPLY_CRITICALERROR)
     nSuccessful |= FZ_REPLY_ERROR;
 
+  // Prevent re-entrant calls during operation cleanup; the outermost call
+  // handles all resource cleanup and reply posting.
+  if (m_bInResetOperation)
+    return;
+  m_bInResetOperation = true;
+
+
   if (m_pTransferSocket)
   {
     ResetTransferSocket(nSuccessful & (FZ_REPLY_ERROR | FZ_REPLY_CANCEL));
@@ -4835,6 +4858,7 @@ void CFtpControlSocket::ResetOperation(int nSuccessful /*=FALSE*/)
   if (m_Operation.pData)
     delete m_Operation.pData;
   m_Operation.pData=0;
+  m_bInResetOperation = false;
 }
 
 void CFtpControlSocket::Delete(CString filename, const CServerPath &path, bool filenameOnly)
@@ -4853,6 +4877,7 @@ public:
     DebugAssert(m_Operation.nOpMode==CSMODE_NONE);
     DebugAssert(m_Operation.nOpState==-1);
     DebugAssert(!m_Operation.pData);
+    m_bInResetOperation = false;  // Clear guard from previous ResetOperation
     m_Operation.nOpMode=CSMODE_DELETE;
     CString command = L"DELE ";
     if (!filenameOnly)
@@ -5346,6 +5371,7 @@ void CFtpControlSocket::MakeDir(const CServerPath &path)
     DebugAssert(!path.IsEmpty());
     DebugAssert(m_Operation.nOpMode==CSMODE_NONE);
     DebugAssert(!m_Operation.pData);
+    m_bInResetOperation = false;  // Clear guard from previous ResetOperation
     m_Operation.nOpMode = CSMODE_MKDIR;
     if (!Send(L"CWD "+path.GetParent().GetPathUnterminated()))
       return;
@@ -5518,6 +5544,7 @@ void CFtpControlSocket::Rename(CString oldName, CString newName, const CServerPa
     DebugAssert(m_Operation.nOpMode == CSMODE_NONE);
     DebugAssert(m_Operation.nOpState == -1);
     DebugAssert(!m_Operation.pData);
+    m_bInResetOperation = false;  // Clear guard from previous ResetOperation
     m_Operation.nOpMode = CSMODE_RENAME;
     if (!Send(L"RNFR " + path.FormatFilename(oldName)))
       return;
@@ -5718,6 +5745,7 @@ BOOL CFtpControlSocket::IsReady()
 
 void CFtpControlSocket::Chmod(CString filename, const CServerPath &path, int nValue)
 {
+  m_bInResetOperation = false;  // Clear guard from previous ResetOperation
   m_Operation.nOpMode=CSMODE_CHMOD;
   CString str;
   str.Format( L"SITE CHMOD %03d %s", nValue, (LPCTSTR)path.FormatFilename(filename));

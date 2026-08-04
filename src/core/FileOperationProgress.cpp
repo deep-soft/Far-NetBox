@@ -194,9 +194,9 @@ void TFileOperationProgressType::AssignButKeepSuspendState(const TFileOperationP
 {
   const TGuard Guard(FSection);
   const TValueRestorer<uint64_t> SuspendTimeRestorer(FSuspendTime);
-  const TValueRestorer<bool> SuspendedRestorer(FSuspended);
-
+  const bool SavedSuspended = FSuspended.load();
   Assign(Other);
+  FSuspended = SavedSuspended;
 }
 
 void TFileOperationProgressType::DoClear(bool Batch, bool Speed)
@@ -899,6 +899,10 @@ void TFileOperationProgressType::AddTotalSize(int64_t ASize)
   if (ASize != 0)
   {
     const TGuard Guard(FSection);
+    if (FTotalSize == 0)
+    {
+      FOriginalTotalSize = ASize;
+    }
     FTotalSize += ASize;
 
     if (FParent != nullptr)
@@ -1062,9 +1066,12 @@ TDateTime TFileOperationProgressType::TotalTimeLeft() const
   uint64_t CurCps = GetCPS();
   // sanity check
   const int64_t Processed = FTotalSkipped + FPersistence.TotalTransferred - FTotalTransferBase;
-  if ((CurCps > 0) && (FTotalSize > Processed))
+  // Use original expected size for ETA (stable); fall back to live FTotalSize
+  // if snapshot not yet taken (transfer not started).
+  const int64_t EffectiveTotal = (FOriginalTotalSize > 0) ? FOriginalTotalSize : FTotalSize;
+  if ((CurCps > 0) && (EffectiveTotal > Processed))
   {
-    return TDateTime(nb::ToDouble(FTotalSize - Processed) / CurCps / SecsPerDay);
+    return TDateTime(nb::ToDouble(EffectiveTotal - Processed) / CurCps / SecsPerDay);
   }
   return TDateTime(0.0);
 }
@@ -1178,11 +1185,11 @@ TFileOperationProgressType & TFileOperationProgressType::operator =(const TFileO
   FCount = rhs.FCount;
   FFilesFinished = rhs.FFilesFinished;
   FFilesFinishedSuccessfully = rhs.FFilesFinishedSuccessfully;
-  FSuspended = rhs.FSuspended;
+  FSuspended.store(rhs.FSuspended.load());
   FSuspendTime = rhs.FSuspendTime;
-  FInProgress = rhs.FInProgress;
-  FDone = rhs.FDone;
-  FFileInProgress = rhs.FFileInProgress;
+  FInProgress.store(rhs.FInProgress.load());
+  FDone.store(rhs.FDone.load());
+  FFileInProgress.store(rhs.FFileInProgress.load());
   FTotalSkipped = rhs.FTotalSkipped;
   FTotalSize = rhs.FTotalSize;
   FSkippedSize = rhs.FSkippedSize;
@@ -1207,7 +1214,7 @@ TFileOperationProgressType & TFileOperationProgressType::operator =(const TFileO
   FCount = rhs.FCount;
 
   FCPSLimit = rhs.FCPSLimit;
-  FSuspended = rhs.FSuspended;
+  FSuspended.store(rhs.FSuspended.load());
 
   FTransferringFile = rhs.FTransferringFile;
 

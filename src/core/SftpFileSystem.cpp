@@ -5465,9 +5465,13 @@ int32_t TSFTPFileSystem::SFTPOpenRemote(void * AOpenParams, void * /*Param2*/)
           const UnicodeString RealFileName = LocalCanonify(OpenParams->RemoteFileName);
           ReadFile(RealFileName, LocalFile);
           File.reset(LocalFile);
+          if (File == nullptr)
+          {
+            throw Exception(FMTLOAD(FILE_NOT_EXISTS, RealFileName));
+          }
           File->FullFileName = RealFileName;
           OpenParams->DestFileSize = File->GetSize(); // Resolve symlinks?
-          if ((OpenParams->FileParams != nullptr) && (File != nullptr))
+          if (OpenParams->FileParams != nullptr)
           {
             OpenParams->FileParams->DestTimestamp = File->GetModification();
             OpenParams->FileParams->DestSize = OpenParams->DestFileSize;
@@ -6113,7 +6117,6 @@ void TSFTPFileSystem::Sink(
     {
       SAFE_CLOSE_HANDLE(LocalFileHandle);
     }
-
 
     if (FTerminal && DeleteLocalFile && (!ResumeAllowed || OperationProgress->GetLocallyUsed() == 0) &&
         (OverwriteMode == omOverwrite))

@@ -1,5 +1,6 @@
 #include "afxdll.h"
 #include <vcl.h>
+#include <atomic>
 
 #include <plugin.hpp>
 #include <Sysutils.hpp>
@@ -227,15 +228,25 @@ intptr_t WINAPI ProcessPanelInputW(const struct ProcessPanelInputInfo * Info)
   return Result;
 }
 
+static std::atomic<bool> g_inProcessPanelEvent{false};
+
 intptr_t WINAPI ProcessPanelEventW(const struct ProcessPanelEventInfo * Info)
 {
+  // Prevent reentrant calls and calls during plugin teardown (issue #313).
+  // Far Manager can fire panel events after ~TWinSCPPlugin has started destroying
+  // tinylog/fmt state, causing use-after-free in fmt::BasicData.
+  if (g_inProcessPanelEvent.exchange(true))
+    return FALSE;
   LogConsoleMode("BEFORE-ProcessPanelEventW");
   const TExportTracer Tracer("ProcessPanelEventW");
-  if (!Info || (Info->StructSize < sizeof(ProcessPanelEventInfo)))
-    return FALSE;
-  const TFarPluginGuard Guard;
-  const intptr_t Result = FarPlugin->ProcessPanelEvent(Info);
+  intptr_t Result = FALSE;
+  if (Info && (Info->StructSize >= sizeof(ProcessPanelEventInfo)))
+  {
+    const TFarPluginGuard Guard;
+    Result = FarPlugin->ProcessPanelEvent(Info);
+  }
   LogConsoleMode("AFTER-ProcessPanelEventW");
+  g_inProcessPanelEvent = false;
   return Result;
 }
 
@@ -345,6 +356,14 @@ BOOL WINAPI DllMain(HINSTANCE HInstDLL, DWORD Reason, LPVOID /*ptr*/ )
   {
     HInstanceDLL = HInstDLL;
     PrevInvalidParameterHandler = _set_invalid_parameter_handler(InvalidParameterHandler);
+    // Pin the module so it cannot be unloaded.  With /MT (static CRT) the
+    // runtime registers FLS callbacks inside our code section; if the DLL is
+    // unloaded before process exit, RtlProcessFlsData crashes when it tries to
+    // invoke those callbacks.  Keeping the module mapped prevents the AV.
+    HMODULE hPinned = nullptr;
+    ::GetModuleHandleExW(
+      GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+      reinterpret_cast<LPCWSTR>(&DllMain), &hPinned);
   }
   else if (Reason == DLL_PROCESS_DETACH)
   {

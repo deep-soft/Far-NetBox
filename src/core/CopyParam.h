@@ -37,15 +37,8 @@ struct TUsableCopyParamAttrs
   int32_t Download{0};
 };
 
-class TTerminal;
-class TFTPFileSystem;
-class TSFTPFileSystem;
-
 class NB_CORE_EXPORT TCopyParamType : public TObject
 {
-friend class TTerminal;
-friend class TFTPFileSystem;
-friend class TSFTPFileSystem;
 public:
   static bool classof(const TObject * Obj) { return Obj->is(OBJECT_CLASS_TCopyParamType); }
   virtual bool is(TObjectClassId Kind) const override { return (Kind == OBJECT_CLASS_TCopyParamType) || TObject::is(Kind); }
@@ -72,6 +65,7 @@ private:
   UnicodeString FFileMask;
   TFileMasks FIncludeFileMask;
   std::unique_ptr<TStringList> FTransferSkipList;
+  UnicodeString FTempPath;
   UnicodeString FTransferResumeFile;
   bool FClearArchive{false};
   bool FRemoveCtrlZ{false};
@@ -171,6 +165,8 @@ public:
   TFileMasks& IncludeFileMask{FIncludeFileMask};
   __property TStrings * TransferSkipList = { read = GetTransferSkipList, write = SetTransferSkipList };
   RWProperty<const TStrings *>TransferSkipList{nb::bind(&TCopyParamType::GetTransferSkipList, this), nb::bind(&TCopyParamType::SetTransferSkipList, this)};
+  __property UnicodeString TempPath = { read = FTempPath, write = FTempPath };
+  UnicodeString& TempPath{FTempPath};
   __property UnicodeString TransferResumeFile = { read = FTransferResumeFile, write = FTransferResumeFile };
   UnicodeString& TransferResumeFile{FTransferResumeFile};
   __property bool ClearArchive = { read = FClearArchive, write = FClearArchive };
@@ -239,6 +235,8 @@ public:
   const TFileMasks & GetIncludeFileMask() const { return FIncludeFileMask; }
   TFileMasks & GetIncludeFileMask() { return FIncludeFileMask; }
   void SetIncludeFileMask(const TFileMasks & Value) { FIncludeFileMask = Value; }
+  UnicodeString GetTempPath() const { return FTempPath; }
+  void SetTempPath(const UnicodeString & Value) { FTempPath = Value; }
   bool GetClearArchive() const { return FClearArchive; }
   void SetClearArchive(bool Value) { FClearArchive = Value; }
   UnicodeString GetTransferResumeFile() const { return FTransferResumeFile; }
